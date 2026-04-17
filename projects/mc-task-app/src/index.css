@@ -1,0 +1,97 @@
+/* ================================================
+   我的世界任务激励工具 — 全局样式
+   Mobile-first, responsive design
+   ================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* 防止橡皮筋滚动 iOS */
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #1A1A2E;
+  color: #ffffff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* 禁止文字自动放大（iOS 横屏时） */
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 安全区域 */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* ================================================
+   滚动条样式
+   ================================================ */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #1A1A1A;
+}
+::-webkit-scrollbar-thumb {
+  background: #4CAF50;
+  border-radius: 2px;
+}
+
+/* ================================================
+   按钮和输入框全局优化
+   ================================================ */
+button {
+  /* 防止 iOS 按钮圆角错误 */
+  -webkit-appearance: none;
+  appearance: none;
+  /* 禁止 iOS 点击高亮 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  /* 防止 iOS 缩放 */
+  font-size: 16px !important;
+}
+
+/* ================================================
+   响应式断点辅助类
+   ================================================ */
+
+/* 小屏幕手机（< 480px） */
+@media (max-width: 480px) {
+  :root {
+    font-size: 14px;
+  }
+}
+
+/* 平板及以上（> 768px） */
+@media (min-width: 768px) {
+  :root {
+    font-size: 16px;
+  }
+}
+
+/* 横屏适配 */
+@media (max-height: 500px) and (orientation: landscape) {
+  body {
+    padding-top: env(safe-area-inset-top);
+  }
+}
