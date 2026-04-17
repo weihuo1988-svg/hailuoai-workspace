@@ -1,0 +1,12 @@
+# 敏感信息 - 禁止提交
+.env
+.env.*
+aliyun_cred.json
+credentials.json
+*secret*
+*credential*
+id_rsa
+id_ed25519
+*.pem
+ssh_pass.sh
+deploy_aliyun.py
