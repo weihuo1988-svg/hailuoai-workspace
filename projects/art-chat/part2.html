@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+
+    els = (parts[1] || '').split(/[、,，]/).map(s => s.trim()).filter(s => s.length > 0 && s.length < 20).slice(0, 8);
+
+    S.foundElements = els.length > 0 ? els : [description.slice(0, 10) || '这幅画的内容'];
+
+    if (description) {
+      document.getElementById('analyzingTitle').textContent = description;
+    }
+
+    document.getElementById('foundItems').classList.add('show');
+    document.getElementById('foundItemsList').innerHTML = S.foundElements.map(e => `<span class="found-item">${e}</span>`).join('');
+
+  } catch(err) {
+    console.warn('AI分析失败', err);
+    document.getElementById('analysisError').style.display = '';
+    document.getElementById('analysisError').textContent = '未能完整识别画作，对话将继续进行';
+    S.foundElements = ['画里的有趣内容'];
+    await sleep(2000);
+    startChat();
+    return;
+  }
+
+  await sleep(1800);
+  startChat();
+}
+
+// ============================================================
+// 问题池（18道，覆盖6大类别，不重复抽取）
+// ============================================================
+const QUESTION_POOL = [
+  // 描述
+  (els) => `我看到这幅画里有"${els[0] || '这里'}"，好有意思！能给这幅画起个名字吗？🎨`,
+  (els) => `这幅画画的是什么场景呀？给我讲讲吧 🌈`,
+  // 聚焦
+  () => `你最喜欢哪个部分？为什么最喜欢它？✨`,
+  () => `哪个颜色是你选的？为什么选这个颜色？🎨`,
+  () => `这部分你花了多长时间画的？💪`,
+  // 叙事
+  () => `画里这个___在做什么？它开心吗？🌈`,
+  () => `这幅画里的故事，是什么时候发生的？☀️`,
+  () => `如果画里的东西能动起来，会发生什么？🦄`,
+  // 感受
+  () => `你画这幅画的时候，心情怎么样？😊`,
+  () => `画完之后，你满意吗？最满意哪点？🌟`,
+  () => `这幅画你想给谁看呀？为什么？💌`,
+  // 创意
+  () => `下次再画类似的，还想加点什么？🚀`,
+  () => `画里有没有什么是你自己想象出来的？✨`,
+  () => `如果下雨了，画里会变成什么样？☔`,
+  // 回顾
+  () => `画的时候遇到困难了吗？怎么解决的？💡`,
+  () => `和以前画的比起来，这幅有什么不一样？🌱`,
+  () => `你觉得自己是有想象力的小画家吗？💜`,
+];
+
+let usedQIndexes = [];
+
+function pickNextQuestion() {
+  const available = QUESTION_POOL.map((_, i) => i).filter(i => !usedQIndexes.includes(i));
+  if (available.length === 0) { usedQIndexes = []; return pickNextQuestion(); }
+  const idx = available[Math.floor(Math.random() * available.length)];
+  usedQIndexes.push(idx);
+  return QUESTION_POOL[idx](S.foundElements);
+}
+
+// ============================================================
+// 对话
+// ============================================================
+function startChat() {
+  document.getElementById('analyzingView').classList.remove('show');
+  document.getElementById('chatView').classList.add('show');
+  goStep(3);
+
+  S.questionCount = 0;
+  S.conversation = [];
+  S.askedQuestions = [];
+  usedQIndexes = [];
+  S.summaryReady = false;
+
+  document.getElementById('chatMessages').innerHTML = '';
+  document.getElementById('historyItems').innerHTML = '';
+  document.getElementById('historyList').classList.remove('show');
+  document.getElementById('summaryBtn').style.display = 'none';
+
+  const intro = S.foundElements.length > 0 && S.foundElements[0] !== '画里的有趣内容'
+    ? `这幅画好有意思！我看到里面有"${S.foundElements.slice(0,3).join('和')}"呢，好想知道更多！`
+    : `这幅画太有想象力了！让我来问你几个问题，探索你画里的小世界吧 🎨`;
+  addAIMessage(intro, 'intro');
+  setTimeout(() => { askNextQuestion(); }, 1000);
+}
+
+function askNextQuestion() {
+  const qText = pickNextQuestion();
+  S.currentQuestion = qText;
+  S.questionCount++;
+  S.askedQuestions.push(qText);
+  document.getElementById('chatStatus').textContent = `问题 ${S.questionCount}`;
+  updateTipsForQuestion(S.questionCount);
+  addAIMessage(qText, 'question');
+}
+
+function addAIMessage(text, type) {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'msg-ai';
+  div.innerHTML = `
+    <div class="msg-ai-avatar">🤖</div>
+    <div class="msg-bubble">
+      ${type === 'question' ? `<div class="bubble-question">${text}</div>` : `<div>${text}</div>`}
+      ${type === 'question' ? `<div class="bubble-hint">💡 请爸爸妈妈帮忙输入孩子的回答</div>` : ''}
+    </div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function sendAnswer() {
+  const input = document.getElementById('answerInput');
+  const answer = input.value.trim();
+  if (!answer) return;
+
+  const msgs = document.getElementById('chatMessages');
+  const parentDiv = document.createElement('div');
+  parentDiv.className = 'msg-parent';
+  parentDiv.innerHTML = `<div class="msg-parent-avatar">👨‍👩‍👧</div><div class="msg-bubble">${answer}</div>`;
+  msgs.appendChild(parentDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+  input.value = '';
+  input.style.height = 'auto';
+
+  S.conversation.push({ q: S.currentQuestion, a: answer });
+  updateHistory();
+  document.getElementById('summaryBtn').style.display = '';
+  S.summaryReady = true;
+
+  document.getElementById('chatStatus').textContent = '🤔 在想下一个问题…';
+  await new Promise(r => setTimeout(r, 700));
+
+  const followUp = generateFollowUp(S.currentQuestion, answer);
+  S.currentQuestion = followUp;
+  S.questionCount++;
+  S.askedQuestions.push(followUp);
+
+  document.getElementById('chatStatus').textContent = `问题 ${S.questionCount}`;
+  const fDiv = document.createElement('div');
+  fDiv.className = 'msg-ai';
+  fDiv.innerHTML = `<div class="msg-ai-avatar">🤖</div><div class="msg-bubble"><div class="bubble-question">${followUp}</div><div class="bubble-hint">💡 请爸爸妈妈帮忙输入孩子的回答</div></div>`;
+  msgs.appendChild(fDiv);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function generateFollowUp(question, answer) {
+  const a = answer.trim();
+  if (a.length < 6) return '还有呢？还有吗？😊';
+  if (question.includes('名字') || question.includes('起个')) return '这个名字好棒！有什么特别的意思吗？✨';
+  if (question.includes('颜色')) return '这个颜色好特别！为什么选它呀？🎨';
+  if (question.includes('心情') || question.includes('开心') || question.includes('满意')) return '听起来你很享受！最有意思的是哪一步？🌟';
+  if (question.includes('想象')) return '这个创意是你自己想出来的吗？💡';
+  if (question.includes('困难')) return '真棒！遇到困难还能想办法解决，下次想更上一层楼吗？🚀';
+  if (question.includes('给谁')) return '收到这份礼物的ta一定会很开心！想说点什么吗？💌';
+  const defaults = [
+    '你这样说好有意思！能再多说一点吗？😊',
+    '还有呢？还有吗？🌟',
+    '为什么会这样想呀？💡',
+    '听起来好有创意！是从哪里得到灵感的？✨',
+    '如果___变大了，会发生什么呢？🦄',
+  ];
+  return defaults[Math.floor(Math.random() * defaults.length)];
+}
+
+function updateHistory() {
+  document.getElementById('historyList').classList.add('show');
+  document.getElementById('historyItems').innerHTML = S.conversation.map(c =>
+    `<div class="history-item"><div class="history-q">Q：</div><div class="history-a">${c.a}</div></div>`
+  ).join('');
+}
+
+function updateTipsForQuestion(num) {
+  const tips = [
+    { stage: '🎯 描述技巧', tip: '先让孩子自己说，不急着评价对错' },
+    { stage: '🔍 聚焦技巧', tip: '带孩子注意细节："这部分的形状好特别！"' },
+    { stage: '📖 叙事技巧', tip: '引导描述故事发展："然后呢？发生了什么？"' },
+    { stage: '💜 感受技巧', tip: '共情创作感受："我感觉到你很享受！"' },
+    { stage: '🚀 创意技巧', tip: '打开想象空间，不设限："如果…会怎样？"' },
+    { stage: '🌱 回顾技巧', tip: '鼓励反思与成长，肯定努力过程' },
+  ];
+  const t = tips[(num - 1) % tips.length];
+  document.getElementById('tipsStage').textContent = t.stage;
+  document.getElementById('tipsContent').innerHTML = `
+    <div class="tip-item"><div class="tip-icon">👀</div><div class="tip-text">${t.tip}</div></div>
+    <div class="tip-item"><div class="tip-icon">🌟</div><div class="tip-text">多用"还有呢？还有吗？"延续对话</div></div>
+    <div class="tip-item"><div class="tip-icon">💜</div><div class="tip-text">肯定孩子的表达，不否定、不修改</div></div>`;
+}
+
+function requestNewQuestion() { askNextQuestion(); }
+
+// ============================================================
+// 创意总结
+// ============================================================
+let currentSummary = '';
+
+async function generateSummary() {
+  document.getElementById('summaryModal').classList.add('show');
+  document.getElementById('summaryContent').textContent = '';
+  document.getElementById('summaryLoading').style.display = '';
+  document.getElementById('summaryActions').style.display = 'none';
+
+  const apiKey = localStorage.getItem('mc_api_key');
+
+  if (apiKey && S.conversation.length > 0) {
+    try {
+      const qaPairs = S.conversation.map(c => `问：${c.q.replace(/<[^>]+>/g,'')} 答：${c.a}`).join('\n');
+      const payload = {
+        model: "MiniMax-Text-01",
+        stream: false,
+        messages: [{
+          role: "user",
+          content: `你是一位温暖有爱的家长，根据以下和孩子的对话，以家长第一人称口吻写一段60-90字的朋友圈文案，风格阳光温暖口语化，体现孩子的创造力和想象力，包含孩子说的一句话或一个创意细节，结尾暗示"陪伴是最好的教育"。直接输出文案，不要前缀。
+
+对话记录：
+${qaPairs}`
+        }]
+      };
+
+      const resp = await fetch("https://api.minimax.io/v1/text/chatcompletion_pro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      currentSummary = (data.choices?.[0]?.message?.content || '').trim().replace(/^[""']|[""']$/g, '');
+    } catch(err) {
+      console.warn('总结生成失败，降级模板', err);
+      currentSummary = buildTemplateSummary();
+    }
+  } else {
+    await new Promise(r => setTimeout(r, 1200));
+    currentSummary = buildTemplateSummary();
+  }
+
+  document.getElementById('summaryLoading').style.display = 'none';
+  const displayText = currentSummary.length > 0 ? currentSummary : '⚠️ 请先完成一轮对话，再生成总结。';
+  document.getElementById('summaryContent').textContent = displayText;
+  document.getElementById('summaryActions').style.display = 'flex';
+}
+
+function buildTemplateSummary() {
+  const answers = S.conversation.map(c => c.a).filter(Boolean);
+  if (answers.length === 0) return '';
+  const words = answers.join(' ').match(/[^\s，。！？、]{2,8}/g) || [];
+  const creative = [...new Set(words)].slice(0, 5);
+  const el = S.foundElements[0] || '画里的内容';
+
+  const templates = [
+    `今天陪孩子一起看了ta的画，听ta讲画里的故事——"${creative[0] || el}"，每一个细节都是小小的世界。原来孩子的脑袋里，装着这么多我没想过的东西。蹲下来倾听，才能看见孩子的世界。感谢这次对话，和ta一起成长。`,
+
+    `孩子指着这幅画说"${creative[0] || el}"，我追问了一下，发现ta的脑子里有一整个宇宙。简单又笃定，是我早就丢了的东西。记录这一刻，保持好奇，和孩子一起。`,
+
+    `画画的时候，孩子眼里有光。问ta为什么这样画，ta说"${creative[0] || '因为想'}""。简单又笃定，是我早就丢了的东西。记录这一刻，和孩子一起，保持想象。`,
+  ];
+
+  return templates[Math.floor(Math.random() * templates.length)];
+}
+
+function closeSummaryModal() { document.getElementById('summaryModal').classList.remove('show'); }
+
+function copySummary() {
+  if (!currentSummary) return;
+  const el = document.createElement('textarea');
+  el.value = currentSummary;
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+  showToast('创意文案已复制！去发朋友圈吧 🎉');
+}
+
+// ============================================================
+// 导出对话
+// ============================================================
+function exportConversation() {
+  if (S.conversation.length === 0) { showToast('还没有对话，先聊聊吧！'); return; }
+  const today = new Date().toLocaleDateString('zh-CN');
+  let text = `🎨 小画家对话记录\n日期：${today}\n画作元素：${S.foundElements.join('、')}\n${'='.repeat(28)}\n`;
+  S.conversation.forEach((c, i) => {
+    text += `问题${i+1}：${c.q.replace(/<[^>]+>/g,'')}\n回答${i+1}：${c.a}\n\n`;
+  });
+  text += `${'='.repeat(28)}\n💡 引导小结：多用"为什么"和"还有呢"延续对话，倾听时保持眼神接触，肯定创作过程而非结果。\n\n由「小画家对话助手」生成`;
+  const el = document.createElement('textarea');
+  el.value = text;
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+  showToast('对话记录已复制！📋');
+}
+
+// ============================================================
+// 工具
+// ============================================================
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('answerInput');
+  if (input) {
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAnswer(); }
+    });
+  }
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); });
+  });
+});
+</script>
+
+<style>
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.inland-security-footer {
+  position: fixed;
+  z-index: 10;
+  bottom: 0;
+  right: 0;
+  width: fit-content;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tooltip-container {
+  position: relative;
+}
+
+.trigger-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background-color: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.minimax-link {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 300;
+  color: #adadad;
+  text-decoration: none;
+}
+
+.minimax-link:visited {
+  color: #adadad;
+}
+
+.minimax-link:hover {
+  color: #666666;
+}
+
+.tooltip-content {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  padding-bottom: 16px; /* 8px 内容间距 + 8px 用于鼠标移动的透明区域 */
+  font-size: 12px;
+  line-height: 17px;
+  background-color: #fafafa;
+  border-radius: 12px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  color: #171717;
+}
+
+/* 创建透明的连接区域，让鼠标可以平滑移动到 tooltip */
+.tooltip-content::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+  height: 16px;
+}
+
+.tooltip-container:hover .tooltip-content {
+  display: flex;
+}
+
+.info-section {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.beian-link {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: #171717;
+}
+
+.beian-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 2px;
+}
+
+.underline-text {
+  color: #171717;
+  text-decoration: underline;
+}
+
+.underline-text:hover {
+  color: #000000;
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .trigger-content {
+    background-color: transparent;
+  }
+
+  .minimax-link,
+  .minimax-link:visited {
+    color: #666666;
+  }
+
+  .minimax-link:hover {
+    color: #adadad;
+  }
+
+  .tooltip-content {
+    background-color: #262626;
+    color: #ededed;
+  }
+
+  .beian-link,
+  .underline-text {
+    color: #ededed;
+  }
+
+  .underline-text:hover {
+    color: #ffffff;
+  }
+}
+
+</style>
+<div class="inland-security-footer">
+  <div class="tooltip-container">
+    <div class="trigger-content">
+      <a href="https://www.minimaxi.com/" target="_blank" rel="noreferrer" class="minimax-link">
+        <span>© 2026 MiniMax</span>
+      </a>
+    </div>
+    <div class="tooltip-content">
+      <section class="info-section">
+        <span>上海稀宇科技有限公司</span>
+      </section>
+
+      <section class="info-section">
+        <a class="beian-link" href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=31010402010179" target="_blank" rel="noreferrer">
+          <img alt="hailuo-beian-icon" src="https://cdn.hailuoai.com/hailuo-video-web/public_assets/223037d3-79fd-4db0-a456-749f38a6a14b.png" class="beian-icon">
+          <span class="underline-text">沪公网安备31010402010179号</span>
+        </a>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" class="underline-text">
+          沪ICP备2023003282号-38
+        </a>
+      </section>
+
+      <section class="info-section">
+        <span>模型名称：MiniMax</span>
+        <span>备案号：Shanghai-MiniMax-202505230046</span>
+      </section>
+
+      <section class="info-section">
+        <a href="https://agent.minimaxi.com/doc/zh/terms-of-service.html" target="_blank" rel="noreferrer" class="underline-text">
+          用户协议
+        </a>
+        <a href="https://agent.minimaxi.com/doc/zh/privacy-policy.html" target="_blank" rel="noreferrer" class="underline-text">
+          隐私政策
+        </a>
+      </section>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
