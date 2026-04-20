@@ -1,180 +1,253 @@
 #!/bin/bash
-# =============================================================================
-# 四项目整合 · 一键部署脚本（交互式版）
 #
-# 使用方式：
-#   bash /workspace/deploy.sh
-#   运行时按提示输入服务器 IP 和密码即可
+# HailuoAI Workspace 部署脚本 - 部署到阿里云服务器
 #
-# 依赖：sshpass（脚本会自动检测，如未安装会尝试安装）
-#       如安装失败，会切换为 ssh -o NumberOfPasswordPrompts=1 交互模式
-# =============================================================================
-set -euo pipefail
+# 包含项目:
+#   - portfolio     产品集首页 (/)
+#   - sleep-aid     睡眠助手 (/sleep-aid/)
+#   - mc-task       我的世界任务管理器 (/mc-task/)
+#   - art-chat      艺术绘画聊天 (/art-chat/)
+#
+# 使用方法:
+#   ./deploy.sh                    # 完整部署（构建所有前端 + 上传 + 重启服务）
+#   ./deploy.sh --backend-only     # 仅重启后端服务
+#   ./deploy.sh --build-only       # 仅本地构建
+#
+# 需要设置的环境变量:
+#   DEPLOY_HOST     - 服务器地址 (如: your-server.com)
+#   DEPLOY_USER     - SSH 用户名 (默认: root)
+#   DEPLOY_PATH     - 部署路径 (默认: /opt/hailuoai)
+#   DASHSCOPE_API_KEY - DashScope API Key
+#
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
-log()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+set -e
+
+# 获取脚本所在目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 配置
+DEPLOY_HOST="39.97.246.203"
+DEPLOY_USER="${DEPLOY_USER:-root}"
+DEPLOY_PATH="${DEPLOY_PATH:-/opt/hailuoai}"
+SSH_KEY="${SSH_KEY:-~/.ssh/id_ed25519}"
+DASHSCOPE_API_KEY=""
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-err()  { echo -e "${RED}[ERR]${NC} $1"; exit 1; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# ── 交互式输入 ────────────────────────────────────────────────────────────
-echo ""
-echo "╔════════════════════════════════════════╗"
-echo "║   四项目整合 · 一键部署              ║"
-echo "╚════════════════════════════════════════╝"
-echo ""
-
-read -r -p "服务器 IP [39.97.246.203]: " SERVER_IP
-echo ""
-read -r -s -p "服务器密码: " PASS
-echo ""
-
-SERVER_IP=${SERVER_IP:-39.97.246.203}
-SERVER="root@${SERVER_IP}"
-
-[[ -z "$PASS" ]] && err "密码不能为空"
-
-# ── 工具检测：优先 sshpass，降级为 ssh 交互 ───────────────────────────────
-if command -v sshpass &>/dev/null; then
-    AUTH_MODE="sshpass"
-    log "认证方式: sshpass"
-else
-    # 检查是否可以通过 apt 安装
-    if apt-get install -y sshpass &>/dev/null 2>&1; then
-        AUTH_MODE="sshpass"
-        log "sshpass 安装成功，认证方式: sshpass"
-    else
-        AUTH_MODE="interactive"
-        warn "sshpass 安装失败，将使用交互式 SSH（运行时需要手动输入密码多次）"
-        warn "建议在服务器上执行一次 ssh-copy-id 以避开交互："
-        echo "  ssh-copy-id root@${SERVER_IP}"
+# 检查配置并获取API Key
+check_config() {
+    if [ -z "$DEPLOY_HOST" ]; then
+        error "请设置 DEPLOY_HOST 环境变量"
     fi
-fi
 
-# ── SSH / SCP 命令构造 ───────────────────────────────────────────────────
-if [[ "$AUTH_MODE" == "sshpass" ]]; then
-    SSH_CMD() { sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no "$SERVER" "$1"; }
-    SCP_CMD() { sshpass -p "$PASS" scp -o StrictHostKeyChecking=no "$1" "$SERVER:$2"; }
-    SCP_DIR() { sshpass -p "$PASS" scp -r -o StrictHostKeyChecking=no "$1" "$SERVER:$2"; }
-else
-    SSH_CMD() { ssh -o StrictHostKeyChecking=no -o NumberOfPasswordPrompts=1 \
-                     -o PreferredAuthentications=password \
-                     "$SERVER" "$1"; }
-    SCP_CMD() { scp -o StrictHostKeyChecking=no -o NumberOfPasswordPrompts=1 \
-                     -o PreferredAuthentications=password \
-                     "$1" "$SERVER:$2"; }
-    SCP_DIR() { scp -r -o StrictHostKeyChecking=no -o NumberOfPasswordPrompts=1 \
-                      -o PreferredAuthentications=password \
-                      "$1" "$SERVER:$2"; }
-fi
+    # 展开 ~ 路径
+    SSH_KEY="${SSH_KEY/#\~/$HOME}"
 
-# ── 步骤 1: 验证连通 ─────────────────────────────────────────────────────
-log "验证服务器连通..."
-if ! timeout 5 bash -c "echo > /dev/tcp/${SERVER_IP}/22" 2>/dev/null; then
-    err "无法连接 ${SERVER_IP}:22"
-fi
-log "端口连通 ✓"
-
-AUTH_TEST=$(SSH_CMD "echo AUTH_OK && hostname" 2>&1)
-if ! echo "$AUTH_TEST" | grep -q "AUTH_OK"; then
-    err "SSH 认证失败，请检查密码是否正确。响应: $AUTH_TEST"
-fi
-log "SSH 认证成功 ✓"
-
-# ── 步骤 2: Nginx 安装 ───────────────────────────────────────────────────
-log "检查 Nginx..."
-NGINX_CHECK=$(SSH_CMD "command -v nginx" 2>&1)
-if echo "$NGINX_CHECK" | grep -qv "nginx"; then
-    warn "Nginx 未安装，正在安装..."
-    SSH_CMD "apt-get update && apt-get install -y nginx && echo NGINX_INSTALLED"
-    log "Nginx 安装完成 ✓"
-else
-    log "Nginx 已安装 ✓"
-fi
-
-# ── 步骤 3: 快照 ─────────────────────────────────────────────────────────
-SNAP="/var/www/consolidated/snapshots/$(date +%Y%m%d_%H%M%S)"
-log "创建快照: $SNAP"
-SSH_CMD "mkdir -p $SNAP && cp -r /var/www/consolidated/* $SNAP/ 2>/dev/null; echo SNAPSHOT_OK"
-
-# ── 步骤 4: 创建目录 ─────────────────────────────────────────────────────
-log "创建目录..."
-for d in mc-task-app portfolio sleep-aid art-chat; do
-    SSH_CMD "mkdir -p /var/www/consolidated/$d"
-done
-log "目录就绪 ✓"
-
-# ── 步骤 5: 上传构建产物 ─────────────────────────────────────────────────
-echo ""
-log "=== 上传构建产物 ==="
-
-log "上传 mc-task-app..."
-SCP_DIR "/workspace/projects/mc-task-app/dist/" "/var/www/consolidated/mc-task-app/" && log "mc-task-app ✓"
-
-log "上传 portfolio..."
-SCP_DIR "/workspace/projects/portfolio/dist/" "/var/www/consolidated/portfolio/" && log "portfolio ✓"
-
-log "上传 sleep-aid..."
-SCP_DIR "/workspace/projects/sleep-aid-new/dist/" "/var/www/consolidated/sleep-aid/" && log "sleep-aid ✓"
-
-log "上传 art-chat..."
-SCP_CMD "/workspace/projects/art-chat/dist/index.html" "/var/www/consolidated/art-chat/index.html" && log "art-chat ✓"
-
-# ── 步骤 6: Nginx 配置 ───────────────────────────────────────────────────
-echo ""
-log "=== 配置 Nginx ==="
-
-SSH_CMD "rm -f /etc/nginx/sites-enabled/default"
-
-NCONF=$(cat /workspace/nginx_consolidated.conf)
-SSH_CMD "cat > /etc/nginx/conf.d/consolidated.conf << 'NGEOF'
-${NCONF}
-NGEOF"
-
-NGINX_TEST=$(SSH_CMD "nginx -t 2>&1")
-echo "$NGINX_TEST"
-if echo "$NGINX_TEST" | grep -q "successful"; then
-    SSH_CMD "nginx -s reload"
-    log "Nginx 重载成功 ✓"
-else
-    err "Nginx 配置语法错误，部署中断。"
-fi
-
-# ── 步骤 7: PM2 后端 ─────────────────────────────────────────────────────
-echo ""
-log "重启后端服务..."
-SSH_CMD "pm2 restart all --update-env 2>/dev/null; pm2 save 2>/dev/null; echo PM2_OK"
-
-# ── 步骤 8: 清理旧快照 ─────────────────────────────────────────────────────
-log "清理旧快照（保留最近 5 份）..."
-SSH_CMD "cd /var/www/consolidated/snapshots && ls -dt */ 2>/dev/null | tail -n +6 | xargs rm -rf 2>/dev/null; echo CLEANUP_OK"
-
-# ── 步骤 9: 验证 ─────────────────────────────────────────────────────────
-echo ""
-log "=== 最终验证 ==="
-sleep 2
-
-for pair in "/:portfolio" "/mc-task-app/:mc-task-app" "/sleep-aid/:sleep-aid" "/art-chat/:art-chat"; do
-    path="${pair%%:*}"
-    name="${pair##*:}"
-    code=$(SSH_CMD "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1${path} --max-time 10" 2>&1 | tr -d '[:space:]')
-    if [[ "$code" == "200" ]]; then
-        echo -e "  ${GREEN}✓${NC} http://${SERVER_IP}${path}  → 200  ${name}"
-    else
-        echo -e "  ${YELLOW}⚠${NC}  http://${SERVER_IP}${path}  → ${code:--}  ${name}"
+    # 检查 SSH 密钥是否存在
+    if [ ! -f "$SSH_KEY" ]; then
+        error "SSH 密钥不存在: $SSH_KEY\n请先运行以下命令配置 SSH 密钥认证:\n  ssh-keygen -t ed25519\n  ssh-copy-id $DEPLOY_USER@$DEPLOY_HOST"
     fi
-done
 
-# ── 完成 ─────────────────────────────────────────────────────────────────
-echo ""
-echo "══════════════════════════════════════"
-echo -e "${GREEN}🎉 部署完成！${NC}"
-echo "  服务器: $SERVER_IP"
-echo "  快照目录: $SNAP"
-echo "══════════════════════════════════════"
-echo ""
-echo "访问地址："
-echo "  http://$SERVER_IP/            → portfolio（入口）"
-echo "  http://$SERVER_IP/mc-task-app/  → mc-task-app"
-echo "  http://$SERVER_IP/sleep-aid/     → sleep-aid"
-echo "  http://$SERVER_IP/art-chat/      → art-chat"
-echo ""
+    # 获取 DASHSCOPE_API_KEY（只输入一次）
+    if [ -z "$DASHSCOPE_API_KEY" ]; then
+        echo -n "请输入 DASHSCOPE_API_KEY: "
+        read -s DASHSCOPE_API_KEY
+        echo ""
+    fi
+}
+
+# SSH 命令
+ssh_cmd() {
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "$@"
+}
+
+# SCP 命令
+scp_cmd() {
+    scp -i "$SSH_KEY" -o StrictHostKeyChecking=no "$@"
+}
+
+# 构建单个前端项目
+build_project() {
+    local name=$1
+    local dir=$2
+    log "构建 $name ..."
+    cd "$SCRIPT_DIR/$dir"
+    npm install
+    npm run build:prod 2>/dev/null || npm run build
+    cd "$SCRIPT_DIR"
+}
+
+# 构建统一前端
+build_all_frontends() {
+    log "开始构建统一前端项目..."
+
+    # 统一前端包含所有页面: portfolio, sleep-aid, mc-task, art-chat
+    build_project "unified-frontend" "frontend"
+
+    log "前端构建完成"
+}
+
+# 准备部署包
+prepare_package() {
+    log "准备部署包..."
+    cd "$SCRIPT_DIR"
+    rm -rf .deploy
+    mkdir -p .deploy/public
+
+    # 复制后端文件
+    cp backend/package.json .deploy/
+    cp backend/server.js .deploy/
+
+    # 复制统一前端构建产物到根目录
+    cp -r frontend/dist/* .deploy/public/
+
+    log "部署包准备完成"
+}
+
+# 上传到服务器
+upload() {
+    log "上传到服务器 $DEPLOY_HOST..."
+
+    # 创建目录
+    ssh_cmd "mkdir -p $DEPLOY_PATH"
+
+    # 上传文件
+    scp_cmd -r .deploy/* "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+    log "上传完成"
+}
+
+# 在服务器上安装依赖并启动
+remote_setup() {
+    log "在服务器上配置服务..."
+
+    ssh_cmd << REMOTE_SCRIPT
+set -e
+cd $DEPLOY_PATH
+
+# 安装依赖
+npm install --production
+
+# 创建 systemd 服务
+sudo tee /etc/systemd/system/hailuoai.service > /dev/null << 'EOF'
+[Unit]
+Description=HailuoAI Workspace Backend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$DEPLOY_PATH
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=80
+EnvironmentFile=$DEPLOY_PATH/.env
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 重载 systemd 并重启服务
+sudo systemctl daemon-reload
+sudo systemctl enable hailuoai
+sudo systemctl restart hailuoai
+
+echo "服务已启动"
+systemctl status hailuoai --no-pager || true
+REMOTE_SCRIPT
+
+    log "服务配置完成"
+}
+
+# 创建远程 .env 文件
+setup_env() {
+    if [ -n "$DASHSCOPE_API_KEY" ]; then
+        log "配置环境变量..."
+        ssh_cmd "echo 'DASHSCOPE_API_KEY=$DASHSCOPE_API_KEY' > $DEPLOY_PATH/.env && echo 'PORT=80' >> $DEPLOY_PATH/.env"
+        log "环境变量配置完成"
+    else
+        warn "DASHSCOPE_API_KEY 未设置，请手动配置服务器上的 $DEPLOY_PATH/.env 文件"
+    fi
+}
+
+# 仅重启后端
+restart_backend() {
+    check_config
+    log "重启后端服务..."
+    ssh_cmd "sudo systemctl restart hailuoai && systemctl status hailuoai --no-pager"
+    log "后端已重启"
+}
+
+# 清理
+cleanup() {
+    cd "$SCRIPT_DIR"
+    rm -rf .deploy
+}
+
+# 完整部署
+full_deploy() {
+    check_config
+    build_all_frontends
+    prepare_package
+    upload
+    setup_env
+    remote_setup
+    cleanup
+
+    log "部署完成!"
+    log ""
+    log "访问地址:"
+    log "  - 产品集首页:     http://$DEPLOY_HOST/"
+    log "  - 睡眠助手:       http://$DEPLOY_HOST/sleep-aid/"
+    log "  - 我的世界任务:   http://$DEPLOY_HOST/mc-task/"
+    log "  - 艺术绘画聊天:   http://$DEPLOY_HOST/art-chat/"
+}
+
+# 主入口
+case "${1:-}" in
+    --backend-only)
+        restart_backend
+        ;;
+    --build-only)
+        build_all_frontends
+        log "构建完成"
+        ;;
+    --help|-h)
+        echo "HailuoAI Workspace 部署脚本"
+        echo ""
+        echo "项目:"
+        echo "  - portfolio     产品集首页 (/)"
+        echo "  - sleep-aid     睡眠助手 (/sleep-aid/)"
+        echo "  - mc-task       我的世界任务管理器 (/mc-task/)"
+        echo "  - art-chat      艺术绘画聊天 (/art-chat/)"
+        echo ""
+        echo "用法:"
+        echo "  ./deploy.sh                完整部署"
+        echo "  ./deploy.sh --backend-only 仅重启后端"
+        echo "  ./deploy.sh --build-only   仅构建前端"
+        echo ""
+        echo "环境变量:"
+        echo "  DEPLOY_HOST       服务器地址 (必需)"
+        echo "  DEPLOY_USER       SSH 用户名 (默认: root)"
+        echo "  DEPLOY_PATH       部署路径 (默认: /opt/hailuoai)"
+        echo "  DASHSCOPE_API_KEY DashScope API Key"
+        echo "  SSH_KEY           SSH 私钥路径 (默认: ~/.ssh/id_ed25519)"
+        echo ""
+        echo "首次使用请先配置 SSH 密钥认证:"
+        echo "  ssh-keygen -t ed25519"
+        echo "  ssh-copy-id root@39.97.246.203"
+        ;;
+    *)
+        full_deploy
+        ;;
+esac
