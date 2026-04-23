@@ -73,6 +73,13 @@ pull_code() {
         git checkout "$GIT_BRANCH"
         git reset --hard "origin/$GIT_BRANCH"
         log "代码已更新到最新版本"
+    elif [ -d "$DEPLOY_PATH" ]; then
+        # 目录存在但不是 git 仓库，先清理再克隆
+        warn "目录 $DEPLOY_PATH 存在但不是 git 仓库，正在清理..."
+        rm -rf "$DEPLOY_PATH"
+        mkdir -p "$(dirname "$DEPLOY_PATH")"
+        git clone -b "$GIT_BRANCH" "$GIT_REPO" "$DEPLOY_PATH"
+        log "仓库克隆完成"
     else
         # 首次部署，克隆仓库
         log "首次部署，克隆仓库..."
