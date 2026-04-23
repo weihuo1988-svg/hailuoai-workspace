@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# HailuoAI Workspace 部署脚本 - 部署到阿里云服务器
+# HailuoAI Workspace 云端部署脚本 - 在云服务器上拉取代码并部署
 #
 # 包含项目:
 #   - portfolio     产品集首页 (/)
@@ -9,28 +9,37 @@
 #   - art-chat      艺术绘画聊天 (/art-chat/)
 #
 # 使用方法:
-#   ./deploy.sh                    # 完整部署（构建所有前端 + 上传 + 重启服务）
-#   ./deploy.sh --backend-only     # 仅重启后端服务
-#   ./deploy.sh --build-only       # 仅本地构建
+#   ./deploy_cloud.sh <DASHSCOPE_API_KEY>              # 完整部署
+#   ./deploy_cloud.sh --restart-only                   # 仅重启后端服务
 #
-# 需要设置的环境变量:
-#   DEPLOY_HOST     - 服务器地址 (如: your-server.com)
-#   DEPLOY_USER     - SSH 用户名 (默认: root)
-#   DEPLOY_PATH     - 部署路径 (默认: /opt/hailuoai)
-#   DASHSCOPE_API_KEY - DashScope API Key
+# 前提条件:
+#   - 服务器上已安装 git, node, npm
+#   - 已配置 git 仓库访问权限 (SSH key 或 HTTPS token)
 #
 
 set -e
 
-# 获取脚本所在目录
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # 配置
-DEPLOY_HOST="39.97.246.203"
-DEPLOY_USER="${DEPLOY_USER:-root}"
-DEPLOY_PATH="${DEPLOY_PATH:-/opt/hailuoai}"
-SSH_KEY="${SSH_KEY:-~/.ssh/id_ed25519}"
+DEPLOY_PATH="/opt/hailuoai"
+GIT_REPO="git@github.com:weihuo1988-svg/hailuoai-workspace.git"
+GIT_BRANCH="main"
+
+# 解析参数
 DASHSCOPE_API_KEY=""
+ACTION=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --restart-only|--help|-h)
+            ACTION="$arg"
+            ;;
+        *)
+            if [ -z "$DASHSCOPE_API_KEY" ]; then
+                DASHSCOPE_API_KEY="$arg"
+            fi
+            ;;
+    esac
+done
 
 # 颜色输出
 RED='\033[0;31m'
@@ -42,102 +51,94 @@ log() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# 检查配置并获取API Key
-check_config() {
-    if [ -z "$DEPLOY_HOST" ]; then
-        error "请设置 DEPLOY_HOST 环境变量"
-    fi
+# 检查必要依赖
+check_dependencies() {
+    log "检查依赖..."
 
-    # 展开 ~ 路径
-    SSH_KEY="${SSH_KEY/#\~/$HOME}"
+    command -v git >/dev/null 2>&1 || error "请先安装 git"
+    command -v node >/dev/null 2>&1 || error "请先安装 node"
+    command -v npm >/dev/null 2>&1 || error "请先安装 npm"
 
-    # 检查 SSH 密钥是否存在
-    if [ ! -f "$SSH_KEY" ]; then
-        error "SSH 密钥不存在: $SSH_KEY\n请先运行以下命令配置 SSH 密钥认证:\n  ssh-keygen -t ed25519\n  ssh-copy-id $DEPLOY_USER@$DEPLOY_HOST"
-    fi
+    log "依赖检查通过"
+}
 
-    # 获取 DASHSCOPE_API_KEY（只输入一次）
-    if [ -z "$DASHSCOPE_API_KEY" ]; then
-        echo -n "请输入 DASHSCOPE_API_KEY: "
-        read -s DASHSCOPE_API_KEY
-        echo ""
+# 拉取或克隆代码
+pull_code() {
+    log "拉取代码..."
+
+    if [ -d "$DEPLOY_PATH" ]; then
+        # 目录存在，拉取最新代码
+        cd "$DEPLOY_PATH"
+        git pull origin "$GIT_BRANCH"
+        log "代码已更新到最新版本"
+    else
+        # 首次部署，克隆仓库
+        log "首次部署，克隆仓库..."
+        mkdir -p "$(dirname "$DEPLOY_PATH")"
+        git clone -b "$GIT_BRANCH" "$GIT_REPO" "$DEPLOY_PATH"
+        log "仓库克隆完成"
     fi
 }
 
-# SSH 命令
-ssh_cmd() {
-    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "$@"
-}
+# 构建前端
+build_frontend() {
+    log "构建前端..."
 
-# SCP 命令
-scp_cmd() {
-    scp -i "$SSH_KEY" -o StrictHostKeyChecking=no "$@"
-}
-
-# 构建单个前端项目
-build_project() {
-    local name=$1
-    local dir=$2
-    log "构建 $name ..."
-    cd "$SCRIPT_DIR/$dir"
+    cd "$DEPLOY_PATH/frontend"
     npm install
     npm run build:prod 2>/dev/null || npm run build
-    cd "$SCRIPT_DIR"
-}
-
-# 构建统一前端
-build_all_frontends() {
-    log "开始构建统一前端项目..."
-
-    # 统一前端包含所有页面: portfolio, sleep-aid, mc-task, art-chat
-    build_project "unified-frontend" "frontend"
 
     log "前端构建完成"
 }
 
-# 准备部署包
-prepare_package() {
-    log "准备部署包..."
-    cd "$SCRIPT_DIR"
-    rm -rf .deploy
-    mkdir -p .deploy/public
+# 准备部署目录
+prepare_deploy() {
+    log "准备部署目录..."
+
+    cd "$DEPLOY_PATH"
+
+    # 创建运行目录
+    mkdir -p "$DEPLOY_PATH/run/public"
 
     # 复制后端文件
-    cp backend/package.json .deploy/
-    cp backend/server.js .deploy/
+    cp backend/package.json run/
+    cp backend/server.js run/
 
-    # 复制统一前端构建产物到根目录
-    cp -r frontend/dist/* .deploy/public/
+    # 复制前端构建产物
+    cp -r frontend/dist/* run/public/
 
-    log "部署包准备完成"
+    log "部署目录准备完成"
 }
 
-# 上传到服务器
-upload() {
-    log "上传到服务器 $DEPLOY_HOST..."
+# 安装后端依赖
+install_backend_deps() {
+    log "安装后端依赖..."
 
-    # 创建目录
-    ssh_cmd "mkdir -p $DEPLOY_PATH"
+    cd "$DEPLOY_PATH/run"
+    npm install --production
 
-    # 上传文件
-    scp_cmd -r .deploy/* "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-
-    log "上传完成"
+    log "后端依赖安装完成"
 }
 
-# 在服务器上安装依赖并启动
-remote_setup() {
-    log "在服务器上配置服务..."
+# 配置环境变量
+setup_env() {
+    local env_file="$DEPLOY_PATH/run/.env"
 
-    ssh_cmd << REMOTE_SCRIPT
-set -e
-cd $DEPLOY_PATH
+    if [ -z "$DASHSCOPE_API_KEY" ]; then
+        error "请提供 DASHSCOPE_API_KEY 参数\n用法: ./deploy_cloud.sh <DASHSCOPE_API_KEY>"
+    fi
 
-# 安装依赖
-npm install --production
+    log "配置环境变量..."
+    echo "DASHSCOPE_API_KEY=$DASHSCOPE_API_KEY" > "$env_file"
+    echo "PORT=80" >> "$env_file"
+    log "环境变量配置完成"
+}
 
-# 创建 systemd 服务
-sudo tee /etc/systemd/system/hailuoai.service > /dev/null << 'EOF'
+# 配置 systemd 服务
+setup_systemd() {
+    log "配置 systemd 服务..."
+
+    sudo tee /etc/systemd/system/hailuoai.service > /dev/null << EOF
 [Unit]
 Description=HailuoAI Workspace Backend
 After=network.target
@@ -145,107 +146,104 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=$DEPLOY_PATH
+WorkingDirectory=$DEPLOY_PATH/run
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
 Environment=PORT=80
-EnvironmentFile=$DEPLOY_PATH/.env
+EnvironmentFile=$DEPLOY_PATH/run/.env
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# 重载 systemd 并重启服务
-sudo systemctl daemon-reload
-sudo systemctl enable hailuoai
-sudo systemctl restart hailuoai
+    sudo systemctl daemon-reload
+    sudo systemctl enable hailuoai
 
-echo "服务已启动"
-systemctl status hailuoai --no-pager || true
-REMOTE_SCRIPT
-
-    log "服务配置完成"
+    log "systemd 服务配置完成"
 }
 
-# 创建远程 .env 文件
-setup_env() {
-    if [ -n "$DASHSCOPE_API_KEY" ]; then
-        log "配置环境变量..."
-        ssh_cmd "echo 'DASHSCOPE_API_KEY=$DASHSCOPE_API_KEY' > $DEPLOY_PATH/.env && echo 'PORT=80' >> $DEPLOY_PATH/.env"
-        log "环境变量配置完成"
+# 重启服务
+restart_service() {
+    log "重启服务..."
+
+    sudo systemctl restart hailuoai
+
+    # 等待服务启动
+    sleep 2
+
+    if systemctl is-active --quiet hailuoai; then
+        log "服务已启动"
+        systemctl status hailuoai --no-pager || true
     else
-        warn "DASHSCOPE_API_KEY 未设置，请手动配置服务器上的 $DEPLOY_PATH/.env 文件"
+        error "服务启动失败，请检查日志: journalctl -u hailuoai -f"
     fi
 }
 
-# 仅重启后端
-restart_backend() {
-    check_config
-    log "重启后端服务..."
-    ssh_cmd "sudo systemctl restart hailuoai && systemctl status hailuoai --no-pager"
-    log "后端已重启"
+# 显示部署信息
+show_info() {
+    local host=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+
+    log ""
+    log "部署完成!"
+    log ""
+    log "访问地址:"
+    log "  - 产品集首页:     http://$host/"
+    log "  - 睡眠助手:       http://$host/sleep-aid/"
+    log "  - 我的世界任务:   http://$host/mc-task/"
+    log "  - 艺术绘画聊天:   http://$host/art-chat/"
+    log ""
+    log "常用命令:"
+    log "  查看日志: journalctl -u hailuoai -f"
+    log "  重启服务: systemctl restart hailuoai"
+    log "  停止服务: systemctl stop hailuoai"
 }
 
-# 清理
-cleanup() {
-    cd "$SCRIPT_DIR"
-    rm -rf .deploy
+# 仅重启服务
+do_restart_only() {
+    restart_service
 }
 
 # 完整部署
 full_deploy() {
-    check_config
-    build_all_frontends
-    prepare_package
-    upload
+    check_dependencies
+    pull_code
+    build_frontend
+    prepare_deploy
+    install_backend_deps
     setup_env
-    remote_setup
-    cleanup
+    setup_systemd
+    restart_service
+    show_info
+}
 
-    log "部署完成!"
-    log ""
-    log "访问地址:"
-    log "  - 产品集首页:     http://$DEPLOY_HOST/"
-    log "  - 睡眠助手:       http://$DEPLOY_HOST/sleep-aid/"
-    log "  - 我的世界任务:   http://$DEPLOY_HOST/mc-task/"
-    log "  - 艺术绘画聊天:   http://$DEPLOY_HOST/art-chat/"
+# 显示帮助
+show_help() {
+    echo "HailuoAI Workspace 云端部署脚本"
+    echo ""
+    echo "项目:"
+    echo "  - portfolio     产品集首页 (/)"
+    echo "  - sleep-aid     睡眠助手 (/sleep-aid/)"
+    echo "  - mc-task       我的世界任务管理器 (/mc-task/)"
+    echo "  - art-chat      艺术绘画聊天 (/art-chat/)"
+    echo ""
+    echo "用法:"
+    echo "  ./deploy_cloud.sh <DASHSCOPE_API_KEY>  完整部署"
+    echo "  ./deploy_cloud.sh --restart-only       仅重启服务"
+    echo ""
+    echo "首次使用前请确保:"
+    echo "  1. 服务器上已安装 git, node, npm"
+    echo "  2. 已配置 git 仓库访问权限 (SSH key)"
 }
 
 # 主入口
-case "${1:-}" in
-    --backend-only)
-        restart_backend
-        ;;
-    --build-only)
-        build_all_frontends
-        log "构建完成"
+case "$ACTION" in
+    --restart-only)
+        do_restart_only
         ;;
     --help|-h)
-        echo "HailuoAI Workspace 部署脚本"
-        echo ""
-        echo "项目:"
-        echo "  - portfolio     产品集首页 (/)"
-        echo "  - sleep-aid     睡眠助手 (/sleep-aid/)"
-        echo "  - mc-task       我的世界任务管理器 (/mc-task/)"
-        echo "  - art-chat      艺术绘画聊天 (/art-chat/)"
-        echo ""
-        echo "用法:"
-        echo "  ./deploy.sh                完整部署"
-        echo "  ./deploy.sh --backend-only 仅重启后端"
-        echo "  ./deploy.sh --build-only   仅构建前端"
-        echo ""
-        echo "环境变量:"
-        echo "  DEPLOY_HOST       服务器地址 (必需)"
-        echo "  DEPLOY_USER       SSH 用户名 (默认: root)"
-        echo "  DEPLOY_PATH       部署路径 (默认: /opt/hailuoai)"
-        echo "  DASHSCOPE_API_KEY DashScope API Key"
-        echo "  SSH_KEY           SSH 私钥路径 (默认: ~/.ssh/id_ed25519)"
-        echo ""
-        echo "首次使用请先配置 SSH 密钥认证:"
-        echo "  ssh-keygen -t ed25519"
-        echo "  ssh-copy-id root@39.97.246.203"
+        show_help
         ;;
     *)
         full_deploy
