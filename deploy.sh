@@ -69,6 +69,8 @@ pull_code() {
     if [ -d "$DEPLOY_PATH" ]; then
         # 目录存在，拉取最新代码
         cd "$DEPLOY_PATH"
+        git reset --hard # 强制清除所有本地修改
+        git clean -fd    # 删除所有未跟踪的文件和目录
         git pull origin "$GIT_BRANCH"
         log "代码已更新到最新版本"
     else
