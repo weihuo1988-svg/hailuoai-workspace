@@ -94,7 +94,7 @@ export const SUIT_ICON_MAP: Record<string, string> = {
 
 // ─── 底部 Tab 图标 ───────────────────────────────────────────
 export const TAB_ICON_MAP: Record<string, string> = {
-  tasks:      'diamond_sword.png',
+  tasks:      'writable_book.png',
   chests:     'chest_closed.png',
   collection: 'chest_open.png',
 };

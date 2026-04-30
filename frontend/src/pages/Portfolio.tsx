@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 const PROJECTS = [
   {
-    emoji: '⚔️',
+    emoji: '/mc/writable_book.png',
     name: '我的世界任务工具',
     desc: '用 Minecraft 风格的任务激励机制，帮助孩子建立好习惯。完成任务获得宝箱，收集方块解锁套装。',
     tech: ['React', 'TypeScript', 'Vite'],
@@ -98,7 +98,7 @@ export default function Portfolio() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 52 }}>{p.emoji}</div>
+                <img src={p.emoji} alt={p.name} style={{ width: 52, height: 52, imageRendering: 'pixelated' }} />
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
                     <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>{p.name}</h3>
