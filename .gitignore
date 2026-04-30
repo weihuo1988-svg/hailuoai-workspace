@@ -1,20 +1,5 @@
-# 敏感信息
-.env
-.env.*
-*.pem
-*secret*
-*credential*
-
-# Node.js
-node_modules/
-dist/
-*.log
-
-# 系统文件
+node_modules
+dist
+dist-ssr
+*.local
 .DS_Store
-
-# Claude Code
-.claude/
-
-# pnpm store
-.pnpm-store/
