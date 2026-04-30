@@ -1,4 +1,4 @@
-import type { IconType } from '@/lib/types';
+import type { IconType } from '../lib/types';
 
 interface DoodleIconProps {
   type: IconType;

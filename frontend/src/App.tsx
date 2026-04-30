@@ -3,6 +3,7 @@ import Portfolio from './pages/Portfolio'
 import SleepAid from './pages/SleepAid'
 import McTaskApp from './pages/mc-task/App'
 import ArtChat from './pages/ArtChat'
+import AdventureApp from './pages/adventure/App'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/sleep-aid/*" element={<SleepAid />} />
         <Route path="/mc-task/*" element={<McTaskApp />} />
         <Route path="/art-chat/*" element={<ArtChat />} />
+        <Route path="/adventure/*" element={<AdventureApp />} />
       </Routes>
     </BrowserRouter>
   )

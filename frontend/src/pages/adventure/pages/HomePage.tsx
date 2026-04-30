@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '@/lib/store';
-import { Button } from '@/components/ui/button';
+import { useApp } from '../lib/store';
+import { Button } from '../components/ui/button';
 import { MapPin, Plus, Compass, Trash2 } from 'lucide-react';
 
 export default function HomePage() {
@@ -34,7 +34,7 @@ export default function HomePage() {
         <Button
           size="xl"
           className="w-full"
-          onClick={() => navigate('/upload')}
+          onClick={() => navigate('/adventure/upload')}
         >
           <Plus className="mr-2 h-5 w-5" />
           新建探险行程
@@ -69,7 +69,7 @@ export default function HomePage() {
                   className="card-doodle p-4 cursor-pointer active:scale-[0.98] transition-transform"
                   onClick={() => {
                     dispatch({ type: 'SET_CURRENT_MAP', mapId: map.id });
-                    navigate('/map');
+                    navigate('/adventure/map');
                   }}
                 >
                   <div className="flex items-start justify-between gap-3">

@@ -7,6 +7,7 @@
 #   - sleep-aid     睡眠助手 (/sleep-aid/)
 #   - mc-task       我的世界任务管理器 (/mc-task/)
 #   - art-chat      艺术绘画聊天 (/art-chat/)
+#   - adventure     小探险家亲子打卡 (/adventure/)
 #
 # 使用方法:
 #   ./deploy_cloud.sh <DASHSCOPE_API_KEY>              # 完整部署
@@ -195,6 +196,7 @@ show_info() {
     log "  - 睡眠助手:       http://$host/sleep-aid/"
     log "  - 我的世界任务:   http://$host/mc-task/"
     log "  - 艺术绘画聊天:   http://$host/art-chat/"
+    log "  - 小探险家打卡:   http://$host/adventure/"
     log ""
     log "常用命令:"
     log "  查看日志: journalctl -u hailuoai -f"
@@ -229,6 +231,7 @@ show_help() {
     echo "  - sleep-aid     睡眠助手 (/sleep-aid/)"
     echo "  - mc-task       我的世界任务管理器 (/mc-task/)"
     echo "  - art-chat      艺术绘画聊天 (/art-chat/)"
+    echo "  - adventure     小探险家打卡 (/adventure/)"
     echo ""
     echo "用法:"
     echo "  ./deploy_cloud.sh <DASHSCOPE_API_KEY>  完整部署"

@@ -1,12 +1,12 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '@/lib/store';
-import { useToast } from '@/components/ui/toast';
-import { Button } from '@/components/ui/button';
-import { DoodleIcon } from '@/components/DoodleIcon';
+import { useApp } from '../lib/store';
+import { useToast } from '../components/ui/toast';
+import { Button } from '../components/ui/button';
+import { DoodleIcon } from '../components/DoodleIcon';
 import { GripVertical, ArrowRight, MapPinned, Pencil, X, Check } from 'lucide-react';
-import type { MapNode } from '@/lib/types';
-import { ICON_LABELS } from '@/lib/types';
+import type { MapNode } from '../lib/types';
+import { ICON_LABELS } from '../lib/types';
 
 export default function AdjustPage() {
   const navigate = useNavigate();
@@ -23,7 +23,7 @@ export default function AdjustPage() {
   const nodes = state.pendingNodes;
 
   if (nodes.length === 0) {
-    navigate('/upload');
+    navigate('/adventure/upload');
     return null;
   }
 
@@ -95,7 +95,7 @@ export default function AdjustPage() {
     const mapTitle = title.trim() || `探险 ${new Date().toLocaleDateString('zh-CN')}`;
     dispatch({ type: 'CREATE_MAP', title: mapTitle });
     showToast('探险地图已生成!', 'success');
-    navigate('/map');
+    navigate('/adventure/map');
   };
 
   const handleEditStart = (node: MapNode, e: React.MouseEvent) => {
@@ -123,7 +123,7 @@ export default function AdjustPage() {
       <div className="px-5 pt-8 pb-4">
         <button
           className="text-muted-foreground text-sm touch-target mb-2"
-          onClick={() => navigate('/upload')}
+          onClick={() => navigate('/adventure/upload')}
         >
           ← 返回上传
         </button>

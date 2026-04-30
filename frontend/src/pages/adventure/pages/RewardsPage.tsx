@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '@/lib/store';
-import { useToast } from '@/components/ui/toast';
-import { Button } from '@/components/ui/button';
+import { useApp } from '../lib/store';
+import { useToast } from '../components/ui/toast';
+import { Button } from '../components/ui/button';
 import { Gift, Lock, Check, Edit3, X } from 'lucide-react';
-import type { Reward } from '@/lib/types';
+import type { Reward } from '../lib/types';
 
 export default function RewardsPage() {
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ export default function RewardsPage() {
     return (
       <div className="min-h-screen bg-parchment flex flex-col items-center justify-center p-5">
         <p className="text-muted-foreground font-display">请先选择一个探险行程</p>
-        <Button className="mt-4" onClick={() => navigate('/')}>
+        <Button className="mt-4" onClick={() => navigate('/adventure')}>
           返回首页
         </Button>
       </div>
@@ -67,7 +67,7 @@ export default function RewardsPage() {
       <div className="px-5 pt-8 pb-4">
         <button
           className="text-muted-foreground text-sm touch-target mb-2"
-          onClick={() => navigate('/map')}
+          onClick={() => navigate('/adventure/map')}
         >
           ← 返回地图
         </button>

@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '@/lib/store';
-import { useToast } from '@/components/ui/toast';
-import { Button } from '@/components/ui/button';
+import { useApp } from '../lib/store';
+import { useToast } from '../components/ui/toast';
+import { Button } from '../components/ui/button';
 import { Camera, ImagePlus, X, ArrowRight, Loader2 } from 'lucide-react';
 
 const MAX_IMAGES = 10;
@@ -60,7 +60,7 @@ export default function UploadPage() {
     analyzeImages(images);
     setAnalyzing(false);
     showToast('AI识别完成!', 'success');
-    navigate('/adjust');
+    navigate('/adventure/adjust');
   };
 
   return (
@@ -69,7 +69,7 @@ export default function UploadPage() {
       <div className="px-5 pt-8 pb-4">
         <button
           className="text-muted-foreground text-sm touch-target mb-2"
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/adventure')}
         >
           ← 返回
         </button>

@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '@/lib/store';
-import { useToast } from '@/components/ui/toast';
-import { DoodleIcon } from '@/components/DoodleIcon';
-import { Button } from '@/components/ui/button';
+import { useApp } from '../lib/store';
+import { useToast } from '../components/ui/toast';
+import { DoodleIcon } from '../components/DoodleIcon';
+import { Button } from '../components/ui/button';
 import { Camera, X, Trophy, Gift, Eye } from 'lucide-react';
-import { simulatePhotoComparison } from '@/lib/types';
-import type { MapNode } from '@/lib/types';
+import { simulatePhotoComparison } from '../lib/types';
+import type { MapNode } from '../lib/types';
 
 const SIMILARITY_THRESHOLD = 70;
 
@@ -79,7 +79,7 @@ export default function MapPage() {
     return (
       <div className="min-h-screen bg-parchment flex flex-col items-center justify-center p-5">
         <p className="text-muted-foreground font-display">还没有探险地图</p>
-        <Button className="mt-4" onClick={() => navigate('/')}>
+        <Button className="mt-4" onClick={() => navigate('/adventure')}>
           返回首页
         </Button>
       </div>
@@ -160,7 +160,7 @@ export default function MapPage() {
       <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-sm px-5 py-3 flex items-center justify-between border-b border-border">
         <button
           className="text-muted-foreground text-sm touch-target"
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/adventure')}
         >
           ← 首页
         </button>
@@ -169,7 +169,7 @@ export default function MapPage() {
         </h2>
         <button
           className="touch-target flex items-center gap-1 text-adventure-gold"
-          onClick={() => navigate('/rewards')}
+          onClick={() => navigate('/adventure/rewards')}
         >
           <Gift className="w-5 h-5" />
           <span className="text-xs font-medium">{completedCount}</span>

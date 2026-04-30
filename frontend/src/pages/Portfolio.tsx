@@ -29,6 +29,15 @@ const PROJECTS = [
     status: '在线运行',
     color: '#673AB7',
   },
+  {
+    emoji: '🗺️',
+    name: '小探险家',
+    desc: '亲子旅行打卡小游戏，上传景点照片生成手绘探险地图，拍照打卡收集宝箱奖励。',
+    tech: ['React', 'SVG', 'TypeScript'],
+    url: '/adventure',
+    status: '在线运行',
+    color: '#E8860C',
+  },
 ]
 
 export default function Portfolio() {

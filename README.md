@@ -10,6 +10,7 @@
 | `/sleep-aid` | 睡眠助手 - 认知洗牌助眠 |
 | `/mc-task` | 我的世界任务管理器 |
 | `/art-chat` | 画画问答 |
+| `/adventure` | 小探险家 - 亲子旅行打卡 |
 
 ## 项目结构
 
@@ -21,7 +22,8 @@
 │   │   │   ├── Portfolio.tsx    # 首页
 │   │   │   ├── SleepAid.tsx     # 睡眠助手
 │   │   │   ├── ArtChat.tsx      # 画画问答
-│   │   │   └── mc-task/         # 我的世界任务
+│   │   │   ├── mc-task/         # 我的世界任务
+│   │   │   └── adventure/       # 小探险家打卡
 │   │   └── ...
 │   └── vite.config.ts
 ├── backend/               # 共享后端 (Express + TTS API)
