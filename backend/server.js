@@ -1,217 +1,154 @@
 /**
- * Sleep Aid Backend - DashScope CosyVoice v3 WebSocket TTS
- * 协议参考：https://help.aliyun.com/zh/dashscope/
+ * mc-task-app 后端服务
+ * 路径：/var/www/consolidated/mc-task-app-backend/server.js
+ * 描述：提供 /api/sync 接口，支持多端数据同步（JSON 文件存储）
+ * 兼容：Node 14~24+
  */
-import express from 'express';
-import cors from 'cors';
-import { createServer } from 'http';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import crypto from 'crypto';
-import WebSocket from 'ws';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || 3001;
+'use strict';
 
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+const http = require('http');
+const fs   = require('fs');
+const path = require('path');
 
-// DashScope 配置
-const API_KEY = process.env.DASHSCOPE_API_KEY;
-if (!API_KEY) {
-  console.error('DASHSCOPE_API_KEY 环境变量未设置，请先设置再启动');
-  process.exit(1);
+// ─── 配置 ─────────────────────────────────────────────────
+const PORT       = 3001;
+const DATA_DIR   = '/var/www/sync-data/';
+const MAX_BODY   = 1 * 1024 * 1024;   // 1MB
+const MAX_FILE   = 10 * 1024 * 1024;  // 10MB
+const UID_RE     = /^[a-zA-Z0-9\-_]+$/;
+const INSECURE   = /[<>\"'\\]/;         // 防止注入路径
+
+// ─── 初始化 ───────────────────────────────────────────────
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
-const WS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+console.log('[server] 数据目录: ' + DATA_DIR);
 
-// CosyVoice v3 音色
-const VOICE_MAP = {
-  female: 'longanwen_v3',   // 龙安温
-  male:   'longanyun_v3',   // 龙安昀
-};
-const VOICE_NAMES = {
-  female: '龙安温（温柔女声）',
-  male:   '龙安昀（温柔男声）',
+// ─── 工具函数 ─────────────────────────────────────────────
+const send = (res, code, obj) => {
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+  res.end(JSON.stringify(obj));
 };
 
-// TTS 核心
-function cosyvoiceTTS(text, voiceId) {
-  return new Promise((resolve, reject) => {
-    const taskId = crypto.randomUUID();
-    const audioChunks = [];
-    let done = false;
-    let step = 0; // 0=init, 1=open, 2=task-started, 3=audio received
+const validUid = (u) =>
+  typeof u === 'string' && UID_RE.test(u) && u.length > 0 && u.length <= 64;
 
-    const ws = new WebSocket(WS_URL, {
-      headers: { Authorization: `Bearer ${API_KEY}` },
-    });
+const safePath = (uid) => {
+  const p = path.join(DATA_DIR, uid + '.json');
+  // 防止路径穿越
+  if (!p.startsWith(DATA_DIR)) return null;
+  return p;
+};
 
-    const safeClose = () => {
-      if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) {
-        try { ws.close(); } catch {}
-      }
-    };
+// ─── GET /api/sync ────────────────────────────────────────
+const onGet = (req, res) => {
+  const u = new URL(req.url, 'http://localhost:' + PORT).searchParams;
+  const id = u.get('userId');
+  if (!validUid(id)) return send(res, 400, { error: 'invalid_userId' });
 
-    const finish = (buf) => {
-      if (done) return;
-      done = true;
-      safeClose();
-      if (buf.length > 0) resolve(buf);
-      else reject(new Error('No audio returned from CosyVoice'));
-    };
+  const fp = safePath(id);
+  if (!fs.existsSync(fp)) return send(res, 404, { version: 0, updatedAt: null, data: null });
 
-    const fail = (err) => {
-      if (done) return;
-      done = true;
-      safeClose();
-      reject(err);
-    };
+  try {
+    const sz = fs.statSync(fp).size;
+    if (sz > MAX_FILE) throw Object.assign(new Error('too large'), { code: 'EFILETOOBIG' });
+    const parsed = JSON.parse(fs.readFileSync(fp, 'utf-8'));
+    send(res, 200, { version: parsed.version ?? 0, updatedAt: parsed.updatedAt ?? null, data: parsed.data ?? null });
+  } catch (e) {
+    console.error('[GET sync error]', e.message);
+    send(res, 500, { error: e.code === 'EFILETOOBIG' ? 'file_too_large' : 'read_failed' });
+  }
+};
 
-    // WebSocket 事件
-    ws.on('open', () => {
-      console.log(`[WS] connected, sending run-task`);
-      ws.send(JSON.stringify({
-        header: { action: 'run-task', task_id: taskId },
-        payload: {
-          task_group: 'audio',
-          task: 'tts',
-          function: 'SpeechSynthesizer',
-          model: 'cosyvoice-v3-flash',
-          input: { text },
-          parameters: {
-            text_type: 'PlainText',
-            voice: voiceId,
-            format: 'wav',
-            sample_rate: 16000,
-          },
-        },
-      }));
-      step = 1;
-    });
+// ─── POST /api/sync ────────────────────────────────────────
+const onPost = (req, res) => {
+  let body = '';
+  let exploded = false;
 
-    ws.on('message', (data) => {
-      if (done) return;
-
-      // 二进制帧 = 音频数据片段
-      if (Buffer.isBuffer(data)) {
-        if (data.length > 0) {
-          audioChunks.push(data);
-          step = 3;
-        }
-        return;
-      }
-
-      let parsed;
-      try { parsed = JSON.parse(data.toString()); }
-      catch { return; }
-
-      const { header = {}, payload = {} } = parsed;
-      const event = header.event || header.type;
-
-      if (event === 'task-started') {
-        step = 2;
-        console.log('[WS] task-started, waiting for audio...');
-        return;
-      }
-
-      if (event === 'result-generated') {
-        // 流式音频帧（base64）
-        const raw = payload.audio_binary || payload.output;
-        if (raw && typeof raw === 'string') {
-          audioChunks.push(Buffer.from(raw, 'base64'));
-        }
-        // 发送 finish-task 触发 server 返回完整音频
-        const isDone = payload.complete ?? parsed.complete;
-        if (isDone) {
-          ws.send(JSON.stringify({ header: { action: 'finish-task', task_id: taskId } }));
-        }
-        return;
-      }
-
-      if (event === 'task-finished') {
-        // 非流式：完整音频在 payload 中
-        console.log('[WS] task-finished');
-        const raw = payload.audio_binary || payload.audio || payload.output;
-        if (raw && typeof raw === 'string') {
-          audioChunks.push(Buffer.from(raw, 'base64'));
-        }
-        finish(Buffer.concat(audioChunks));
-        return;
-      }
-
-      if (event === 'error' || header.error_code) {
-        fail(new Error(header.error_message || `CosyVoice error: ${header.error_code}`));
-      }
-    });
-
-    ws.on('close', (code) => {
-      console.log(`[WS] closed code=${code} step=${step} chunks=${audioChunks.length}`);
-      if (!done) {
-        if (audioChunks.length > 0) {
-          finish(Buffer.concat(audioChunks));
-        } else {
-          fail(new Error(`WebSocket closed (code ${code})`));
-        }
-      }
-    });
-
-    ws.on('error', (err) => fail(new Error(`WebSocket error: ${err.message}`)));
-
-    // 45s 超时保护
-    setTimeout(() => fail(new Error('TTS timeout (45s)')), 45000);
+  req.on('data', (c) => {
+    body += c;
+    if (body.length > MAX_BODY && !exploded) {
+      exploded = true;
+      if (!res.headersSent) res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'payload_too_large' }));
+      req.destroy();
+    }
   });
-}
 
-// HTTP 接口
-app.post('/api/tts', async (req, res) => {
-  const { text, voice = 'female' } = req.body;
-  if (!text) return res.status(400).json({ error: 'text is required' });
-  const voiceId = VOICE_MAP[voice] || VOICE_MAP.female;
-  try {
-    const audio = await cosyvoiceTTS(text, voiceId);
-    res.set({ 'Content-Type': 'audio/wav', 'Content-Length': audio.length });
-    res.send(audio);
-  } catch (err) {
-    console.error('TTS error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+  req.on('end', () => {
+    if (res.headersSent) return;
+    let d;
+    try { d = JSON.parse(body); } catch { return send(res, 400, { error: 'invalid_json' }); }
+
+    const { userId, version, data } = d;
+    if (!validUid(userId)) return send(res, 400, { error: 'invalid_userId' });
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 0)
+      return send(res, 400, { error: 'invalid_version' });
+
+    const fp = safePath(userId);
+    if (!fp) return send(res, 400, { error: 'invalid_userId' });
+
+    // 乐观锁版本冲突检测
+    if (fs.existsSync(fp)) {
+      try {
+        const cur = JSON.parse(fs.readFileSync(fp, 'utf-8'));
+        if ((cur.version ?? 0) > version)
+          return send(res, 409, { error: 'version_conflict', currentVersion: cur.version });
+      } catch (err) {
+        console.error('[conflict check error]', err.message);
+        return send(res, 500, { error: 'conflict_check_failed' });
+      }
+    }
+
+    // 原子写入：tmp → rename
+    const tmp     = fp + '.tmp';
+    const content = JSON.stringify({ version: version + 1, updatedAt: new Date().toISOString(), data }, null, 2);
+    let saved     = false;
+    let retry     = 0;
+
+    while (!saved && retry < 3) {
+      try {
+        fs.writeFileSync(tmp, content, 'utf-8');
+        fs.renameSync(tmp, fp);
+        saved = true;
+        console.log('[sync] 写入 OK userId=' + userId + ' version=' + (version + 1));
+      } catch (err) {
+        if (err.code === 'EEXIST') {
+          retry++;
+          const pause = new Promise(r => setTimeout(r, 50));
+          // 在同步上下文中无法 await，所以改用循环
+          const end = Date.now() + 50;
+          while (Date.now() < end) {} // 微忙等 50ms
+          continue;
+        }
+        console.error('[sync] 写入失败', err.message);
+        return send(res, 500, { error: 'write_failed' });
+      }
+    }
+
+    if (!saved) return send(res, 500, { error: 'write_conflict_retry_exceeded' });
+    send(res, 200, { version: version + 1, updatedAt: new Date().toISOString() });
+  });
+};
+
+// ─── 路由 ─────────────────────────────────────────────────
+const server = http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+  if (req.method === 'GET'    && req.url.startsWith('/api/sync')) return onGet(req, res);
+  if (req.method === 'POST'   && req.url.startsWith('/api/sync')) return onPost(req, res);
+
+  send(res, 404, { error: 'not_found' });
 });
 
-app.post('/api/tts-preview', async (req, res) => {
-  const { voice = 'female' } = req.body;
-  const voiceId = VOICE_MAP[voice] || VOICE_MAP.female;
-  try {
-    const audio = await cosyvoiceTTS('慢慢来，跟随声音入睡。', voiceId);
-    res.set({ 'Content-Type': 'audio/wav', 'Content-Length': audio.length });
-    res.send(audio);
-  } catch (err) {
-    console.error('TTS preview error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('[server] mc-task-app 后端已启动，端口 ' + PORT);
+  console.log('[server] Node 版本: ' + process.version);
 });
 
-app.get('/health', (_, res) => res.json({ status: 'ok' }));
-
-// 静态文件（前端构建产物）
-app.use(express.static(join(__dirname, 'public')));
-
-// SPA 路由支持 - 各子应用
-app.get('/sleep-aid/*', (req, res) => {
-  res.sendFile(join(__dirname, 'public', 'sleep-aid', 'index.html'));
-});
-app.get('/mc-task/*', (req, res) => {
-  res.sendFile(join(__dirname, 'public', 'mc-task', 'index.html'));
-});
-app.get('/art-chat/*', (req, res) => {
-  res.sendFile(join(__dirname, 'public', 'art-chat', 'part2.html'));
-});
-// 默认首页 - portfolio
-app.get('*', (req, res) => {
-  res.sendFile(join(__dirname, 'public', 'index.html'));
-});
-
-createServer(app).listen(PORT, () => {
-  console.log(`Sleep Aid backend -> http://localhost:${PORT}`);
-  console.log(`Voices: female=${VOICE_NAMES.female}, male=${VOICE_NAMES.male}`);
-});
+server.on('error', (e) => { console.error('[server] 错误:', e.message); process.exit(1); });
