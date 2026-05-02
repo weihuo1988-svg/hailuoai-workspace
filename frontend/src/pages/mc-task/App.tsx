@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { BLOCKS, SUITS, TOTAL_WEIGHT } from './data';
 import type { BlockDef, SuitDef } from './data';
 import type { AppState, Tab } from './types';
-import { loadState, saveState, getTodayTasks, getToday, getWeek, getMonth } from './utils';
+import { loadState, saveState, getTodayTasks, getToday, getWeek, getMonth, getSyncConfig, setSyncConfig, syncPush, syncPull } from './utils';
 import { TaskCard, AddTaskForm } from './components/TaskCard';
 import { CollectionPanel } from './components/CollectionPanel';
 import { ChestAnim, SuitAnim } from './components/ChestAnimations';
+import { SyncPanel } from './components/SyncPanel';
 import { STAT_ICON_MAP, TAB_ICON_MAP, MC_BLOCKS_BASE, MC_ITEMS_BASE, MC_LOCAL_BASE } from './mcTextures';
 import './App.css';
 
@@ -52,8 +53,53 @@ export default function McTaskApp() {
   const [openingBlock, setOpeningBlock] = useState<BlockDef | null>(null);
   const [suitUnlock, setSuitUnlock]   = useState<SuitDef | null>(null);
   const [notif, setNotif]               = useState('');
+  const [showSync, setShowSync]   = useState(false);
+  const [syncVer, setSyncVer]     = useState(() => getSyncConfig()?.version ?? 0);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'err'>('idle');
 
-  useEffect(() => { saveState(state); }, [state]);
+  // localStorage 持久化 + 防抖自动推送云端
+  useEffect(() => {
+    saveState(state);
+    const cfg = getSyncConfig();
+    if (!cfg) return;
+    const timer = setTimeout(async () => {
+      try {
+        setSyncStatus('syncing');
+        const newVer = await syncPush(cfg.userId, syncVer, state);
+        setSyncVer(newVer);
+        setSyncConfig({ ...cfg, version: newVer });
+        setSyncStatus('ok');
+      } catch {
+        setSyncStatus('err');
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  // 页面获得焦点时拉取云端最新
+  useEffect(() => {
+    const onFocus = async () => {
+      const cfg = getSyncConfig();
+      if (!cfg) return;
+      try {
+        setSyncStatus('syncing');
+        const { data, version } = await syncPull(cfg.userId);
+        if (data && version > syncVer) {
+          setState(data);
+          setSyncVer(version);
+          setSyncConfig({ ...cfg, version });
+        }
+        setSyncStatus('ok');
+      } catch {
+        setSyncStatus('err');
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    onFocus();
+    return () => window.removeEventListener('focus', onFocus);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 周期重置
   useEffect(() => {
@@ -227,8 +273,24 @@ export default function McTaskApp() {
             <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: '#4CAF50', lineHeight: 1.6 }}>⛏️ 我的世界任务</div>
             <div style={{ fontSize: 13, color: '#9e9', marginTop: 2 }}>儿童任务激励工具</div>
           </div>
-          {/* 4项统计（MC材质图标） */}
+          {/* 同步按钮 + 4项统计（MC材质图标） */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <button onClick={() => setShowSync(v => !v)} title="云同步"
+              style={{
+                background: getSyncConfig() ? 'rgba(76,175,80,0.3)' : 'rgba(255,152,0,0.2)',
+                border: `2px solid ${getSyncConfig() ? '#4CAF50' : '#FF9800'}`,
+                borderRadius: 0, padding: '4px 6px', cursor: 'pointer',
+                fontSize: 14, lineHeight: 1, position: 'relative',
+              }}>
+              {syncStatus === 'syncing' ? '...' : '\u2601\uFE0F'}
+              {getSyncConfig() && (
+                <span style={{
+                  position: 'absolute', top: -3, right: -3,
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: syncStatus === 'err' ? '#f44' : '#4CAF50',
+                }} />
+              )}
+            </button>
             {([
               { icon: MC_ITEMS_BASE + STAT_ICON_MAP.tasks,    v: state.tasks.length,                                   color: '#4CAF50' },
               { icon: MC_ITEMS_BASE + STAT_ICON_MAP.complete, v: completedToday,                                       color: '#8BC34A' },
@@ -261,6 +323,18 @@ export default function McTaskApp() {
 
       {/* 内容 */}
       <div style={{ position: 'relative', zIndex: 2, padding: '16px 14px', maxWidth: 640, margin: '0 auto', paddingBottom: 100 }}>
+
+        {/* 同步面板 */}
+        {showSync && (
+          <div style={{ marginBottom: 16, animation: 'fadeIn 0.2s ease' }}>
+            <SyncPanel
+              state={state}
+              syncVersion={syncVer}
+              onSynced={(data, version) => { setState(data); setSyncVer(version); }}
+              onClose={() => setShowSync(false)}
+            />
+          </div>
+        )}
 
         {/* 任务页 */}
         {tab === 'tasks' && (

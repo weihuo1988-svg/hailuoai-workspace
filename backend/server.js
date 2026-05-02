@@ -1,154 +1,256 @@
 /**
- * mc-task-app 后端服务
- * 路径：/var/www/consolidated/mc-task-app-backend/server.js
- * 描述：提供 /api/sync 接口，支持多端数据同步（JSON 文件存储）
- * 兼容：Node 14~24+
+ * HailuoAI Workspace Backend
+ * - DashScope CosyVoice v3 WebSocket TTS (sleep-aid)
+ * - MC-Task 数据同步 API (/api/sync)
  */
+import express from 'express';
+import cors from 'cors';
+import { createServer } from 'http';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import crypto from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, statSync } from 'fs';
+import WebSocket from 'ws';
 
-'use strict';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PORT = process.env.PORT || 3001;
 
-const http = require('http');
-const fs   = require('fs');
-const path = require('path');
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 
-// ─── 配置 ─────────────────────────────────────────────────
-const PORT       = 3001;
-const DATA_DIR   = '/var/www/sync-data/';
-const MAX_BODY   = 1 * 1024 * 1024;   // 1MB
-const MAX_FILE   = 10 * 1024 * 1024;  // 10MB
-const UID_RE     = /^[a-zA-Z0-9\-_]+$/;
-const INSECURE   = /[<>\"'\\]/;         // 防止注入路径
+// ─── MC-Task 数据同步（JSON 文件存储）────────────────────────
+const SYNC_DATA_DIR = join(__dirname, 'sync-data');
+const UID_RE = /^[a-zA-Z0-9\-_]+$/;
+const MAX_FILE = 10 * 1024 * 1024; // 10MB
 
-// ─── 初始化 ───────────────────────────────────────────────
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!existsSync(SYNC_DATA_DIR)) {
+  mkdirSync(SYNC_DATA_DIR, { recursive: true });
 }
-console.log('[server] 数据目录: ' + DATA_DIR);
 
-// ─── 工具函数 ─────────────────────────────────────────────
-const send = (res, code, obj) => {
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
-  res.end(JSON.stringify(obj));
-};
+function validUid(u) {
+  return typeof u === 'string' && UID_RE.test(u) && u.length > 0 && u.length <= 64;
+}
 
-const validUid = (u) =>
-  typeof u === 'string' && UID_RE.test(u) && u.length > 0 && u.length <= 64;
-
-const safePath = (uid) => {
-  const p = path.join(DATA_DIR, uid + '.json');
-  // 防止路径穿越
-  if (!p.startsWith(DATA_DIR)) return null;
+function safePath(uid) {
+  const p = join(SYNC_DATA_DIR, uid + '.json');
+  if (!p.startsWith(SYNC_DATA_DIR)) return null;
   return p;
-};
+}
 
-// ─── GET /api/sync ────────────────────────────────────────
-const onGet = (req, res) => {
-  const u = new URL(req.url, 'http://localhost:' + PORT).searchParams;
-  const id = u.get('userId');
-  if (!validUid(id)) return send(res, 400, { error: 'invalid_userId' });
+// GET /api/sync?userId=xxx
+app.get('/api/sync', (req, res) => {
+  const id = req.query.userId;
+  if (!validUid(id)) return res.status(400).json({ error: 'invalid_userId' });
 
   const fp = safePath(id);
-  if (!fs.existsSync(fp)) return send(res, 404, { version: 0, updatedAt: null, data: null });
+  if (!fp || !existsSync(fp)) return res.status(404).json({ version: 0, updatedAt: null, data: null });
 
   try {
-    const sz = fs.statSync(fp).size;
-    if (sz > MAX_FILE) throw Object.assign(new Error('too large'), { code: 'EFILETOOBIG' });
-    const parsed = JSON.parse(fs.readFileSync(fp, 'utf-8'));
-    send(res, 200, { version: parsed.version ?? 0, updatedAt: parsed.updatedAt ?? null, data: parsed.data ?? null });
+    const sz = statSync(fp).size;
+    if (sz > MAX_FILE) return res.status(500).json({ error: 'file_too_large' });
+    const parsed = JSON.parse(readFileSync(fp, 'utf-8'));
+    res.json({ version: parsed.version ?? 0, updatedAt: parsed.updatedAt ?? null, data: parsed.data ?? null });
   } catch (e) {
     console.error('[GET sync error]', e.message);
-    send(res, 500, { error: e.code === 'EFILETOOBIG' ? 'file_too_large' : 'read_failed' });
+    res.status(500).json({ error: 'read_failed' });
   }
-};
-
-// ─── POST /api/sync ────────────────────────────────────────
-const onPost = (req, res) => {
-  let body = '';
-  let exploded = false;
-
-  req.on('data', (c) => {
-    body += c;
-    if (body.length > MAX_BODY && !exploded) {
-      exploded = true;
-      if (!res.headersSent) res.writeHead(413, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'payload_too_large' }));
-      req.destroy();
-    }
-  });
-
-  req.on('end', () => {
-    if (res.headersSent) return;
-    let d;
-    try { d = JSON.parse(body); } catch { return send(res, 400, { error: 'invalid_json' }); }
-
-    const { userId, version, data } = d;
-    if (!validUid(userId)) return send(res, 400, { error: 'invalid_userId' });
-    if (typeof version !== 'number' || !Number.isInteger(version) || version < 0)
-      return send(res, 400, { error: 'invalid_version' });
-
-    const fp = safePath(userId);
-    if (!fp) return send(res, 400, { error: 'invalid_userId' });
-
-    // 乐观锁版本冲突检测
-    if (fs.existsSync(fp)) {
-      try {
-        const cur = JSON.parse(fs.readFileSync(fp, 'utf-8'));
-        if ((cur.version ?? 0) > version)
-          return send(res, 409, { error: 'version_conflict', currentVersion: cur.version });
-      } catch (err) {
-        console.error('[conflict check error]', err.message);
-        return send(res, 500, { error: 'conflict_check_failed' });
-      }
-    }
-
-    // 原子写入：tmp → rename
-    const tmp     = fp + '.tmp';
-    const content = JSON.stringify({ version: version + 1, updatedAt: new Date().toISOString(), data }, null, 2);
-    let saved     = false;
-    let retry     = 0;
-
-    while (!saved && retry < 3) {
-      try {
-        fs.writeFileSync(tmp, content, 'utf-8');
-        fs.renameSync(tmp, fp);
-        saved = true;
-        console.log('[sync] 写入 OK userId=' + userId + ' version=' + (version + 1));
-      } catch (err) {
-        if (err.code === 'EEXIST') {
-          retry++;
-          const pause = new Promise(r => setTimeout(r, 50));
-          // 在同步上下文中无法 await，所以改用循环
-          const end = Date.now() + 50;
-          while (Date.now() < end) {} // 微忙等 50ms
-          continue;
-        }
-        console.error('[sync] 写入失败', err.message);
-        return send(res, 500, { error: 'write_failed' });
-      }
-    }
-
-    if (!saved) return send(res, 500, { error: 'write_conflict_retry_exceeded' });
-    send(res, 200, { version: version + 1, updatedAt: new Date().toISOString() });
-  });
-};
-
-// ─── 路由 ─────────────────────────────────────────────────
-const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
-
-  if (req.method === 'GET'    && req.url.startsWith('/api/sync')) return onGet(req, res);
-  if (req.method === 'POST'   && req.url.startsWith('/api/sync')) return onPost(req, res);
-
-  send(res, 404, { error: 'not_found' });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('[server] mc-task-app 后端已启动，端口 ' + PORT);
-  console.log('[server] Node 版本: ' + process.version);
+// POST /api/sync { userId, version, data }
+app.post('/api/sync', (req, res) => {
+  const { userId, version, data } = req.body;
+  if (!validUid(userId)) return res.status(400).json({ error: 'invalid_userId' });
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 0)
+    return res.status(400).json({ error: 'invalid_version' });
+
+  const fp = safePath(userId);
+  if (!fp) return res.status(400).json({ error: 'invalid_userId' });
+
+  // 乐观锁版本冲突检测
+  if (existsSync(fp)) {
+    try {
+      const cur = JSON.parse(readFileSync(fp, 'utf-8'));
+      if ((cur.version ?? 0) > version)
+        return res.status(409).json({ error: 'version_conflict', currentVersion: cur.version });
+    } catch (err) {
+      console.error('[conflict check error]', err.message);
+      return res.status(500).json({ error: 'conflict_check_failed' });
+    }
+  }
+
+  const tmp = fp + '.tmp';
+  const now = new Date().toISOString();
+  const content = JSON.stringify({ version: version + 1, updatedAt: now, data }, null, 2);
+
+  try {
+    writeFileSync(tmp, content, 'utf-8');
+    renameSync(tmp, fp);
+    console.log(`[sync] OK userId=${userId} version=${version + 1}`);
+    res.json({ version: version + 1, updatedAt: now });
+  } catch (err) {
+    console.error('[sync] write failed', err.message);
+    res.status(500).json({ error: 'write_failed' });
+  }
 });
 
-server.on('error', (e) => { console.error('[server] 错误:', e.message); process.exit(1); });
+// ─── DashScope TTS ──────────────────────────────────────────
+const API_KEY = process.env.DASHSCOPE_API_KEY;
+if (!API_KEY) {
+  console.warn('DASHSCOPE_API_KEY 未设置，TTS 功能不可用');
+}
+const WS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+
+const VOICE_MAP = {
+  female: 'longanwen_v3',
+  male:   'longanyun_v3',
+};
+const VOICE_NAMES = {
+  female: '龙安温（温柔女声）',
+  male:   '龙安昀（温柔男声）',
+};
+
+function cosyvoiceTTS(text, voiceId) {
+  return new Promise((resolve, reject) => {
+    if (!API_KEY) return reject(new Error('DASHSCOPE_API_KEY not set'));
+    const taskId = crypto.randomUUID();
+    const audioChunks = [];
+    let done = false;
+    let step = 0;
+
+    const ws = new WebSocket(WS_URL, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    const safeClose = () => {
+      if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) {
+        try { ws.close(); } catch {}
+      }
+    };
+
+    const finish = (buf) => {
+      if (done) return;
+      done = true;
+      safeClose();
+      if (buf.length > 0) resolve(buf);
+      else reject(new Error('No audio returned from CosyVoice'));
+    };
+
+    const fail = (err) => {
+      if (done) return;
+      done = true;
+      safeClose();
+      reject(err);
+    };
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({
+        header: { action: 'run-task', task_id: taskId },
+        payload: {
+          task_group: 'audio',
+          task: 'tts',
+          function: 'SpeechSynthesizer',
+          model: 'cosyvoice-v3-flash',
+          input: { text },
+          parameters: {
+            text_type: 'PlainText',
+            voice: voiceId,
+            format: 'wav',
+            sample_rate: 16000,
+          },
+        },
+      }));
+      step = 1;
+    });
+
+    ws.on('message', (data) => {
+      if (done) return;
+      if (Buffer.isBuffer(data)) {
+        if (data.length > 0) { audioChunks.push(data); step = 3; }
+        return;
+      }
+      let parsed;
+      try { parsed = JSON.parse(data.toString()); } catch { return; }
+      const { header = {}, payload = {} } = parsed;
+      const event = header.event || header.type;
+      if (event === 'task-started') { step = 2; return; }
+      if (event === 'result-generated') {
+        const raw = payload.audio_binary || payload.output;
+        if (raw && typeof raw === 'string') audioChunks.push(Buffer.from(raw, 'base64'));
+        if (payload.complete ?? parsed.complete)
+          ws.send(JSON.stringify({ header: { action: 'finish-task', task_id: taskId } }));
+        return;
+      }
+      if (event === 'task-finished') {
+        const raw = payload.audio_binary || payload.audio || payload.output;
+        if (raw && typeof raw === 'string') audioChunks.push(Buffer.from(raw, 'base64'));
+        finish(Buffer.concat(audioChunks));
+        return;
+      }
+      if (event === 'error' || header.error_code)
+        fail(new Error(header.error_message || `CosyVoice error: ${header.error_code}`));
+    });
+
+    ws.on('close', (code) => {
+      if (!done) {
+        if (audioChunks.length > 0) finish(Buffer.concat(audioChunks));
+        else fail(new Error(`WebSocket closed (code ${code})`));
+      }
+    });
+
+    ws.on('error', (err) => fail(new Error(`WebSocket error: ${err.message}`)));
+    setTimeout(() => fail(new Error('TTS timeout (45s)')), 45000);
+  });
+}
+
+app.post('/api/tts', async (req, res) => {
+  const { text, voice = 'female' } = req.body;
+  if (!text) return res.status(400).json({ error: 'text is required' });
+  const voiceId = VOICE_MAP[voice] || VOICE_MAP.female;
+  try {
+    const audio = await cosyvoiceTTS(text, voiceId);
+    res.set({ 'Content-Type': 'audio/wav', 'Content-Length': audio.length });
+    res.send(audio);
+  } catch (err) {
+    console.error('TTS error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tts-preview', async (req, res) => {
+  const { voice = 'female' } = req.body;
+  const voiceId = VOICE_MAP[voice] || VOICE_MAP.female;
+  try {
+    const audio = await cosyvoiceTTS('慢慢来，跟随声音入睡。', voiceId);
+    res.set({ 'Content-Type': 'audio/wav', 'Content-Length': audio.length });
+    res.send(audio);
+  } catch (err) {
+    console.error('TTS preview error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/health', (_, res) => res.json({ status: 'ok' }));
+
+// 静态文件（前端构建产物）
+app.use(express.static(join(__dirname, 'public')));
+
+// SPA 路由支持
+app.get('/sleep-aid/*', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'sleep-aid', 'index.html'));
+});
+app.get('/mc-task/*', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'mc-task', 'index.html'));
+});
+app.get('/art-chat/*', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'art-chat', 'part2.html'));
+});
+app.get('*', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+createServer(app).listen(PORT, () => {
+  console.log(`Backend -> http://localhost:${PORT}`);
+  console.log(`Sync data dir: ${SYNC_DATA_DIR}`);
+  if (API_KEY) console.log(`TTS voices: ${VOICE_NAMES.female}, ${VOICE_NAMES.male}`);
+});

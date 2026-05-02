@@ -29,6 +29,60 @@ export function getTodayTasks(tasks: AppState['tasks']) {
   });
 }
 
+// ─── 云同步（基于 /api/sync 接口 + 共享 userId）──────────────
+const SYNC_CFG_KEY = 'mc-task-sync-cfg';
+const API_BASE = window.location.origin;
+
+export interface SyncConfig {
+  userId: string;      // 共享 ID，多设备相同即可同步
+  version: number;     // 服务端版本号
+}
+
+export function getSyncConfig(): SyncConfig | null {
+  try {
+    const raw = localStorage.getItem(SYNC_CFG_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+export function setSyncConfig(cfg: SyncConfig | null): void {
+  if (cfg) localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(cfg));
+  else localStorage.removeItem(SYNC_CFG_KEY);
+}
+
+// 生成 6 位易读同步码
+export function generateSyncId(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+// 拉取云端数据
+export async function syncPull(userId: string): Promise<{ data: AppState | null; version: number }> {
+  const res = await fetch(`${API_BASE}/api/sync?userId=${encodeURIComponent(userId)}`);
+  if (res.status === 404) return { data: null, version: 0 };
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  return { data: json.data ?? null, version: json.version ?? 0 };
+}
+
+// 推送本地数据到云端
+export async function syncPush(userId: string, version: number, data: AppState): Promise<number> {
+  const res = await fetch(`${API_BASE}/api/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, version, data }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  return json.version ?? version + 1;
+}
+
 export const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 *{box-sizing:border-box}body{margin:0;background:#1A1A2E}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#1A1A1A}::-webkit-scrollbar-thumb{background:#4CAF50;border-radius:3px}
