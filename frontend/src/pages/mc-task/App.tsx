@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BLOCKS, SUITS, TOTAL_WEIGHT } from './data';
+import { BLOCKS, SUITS, drawBlock } from './data';
 import type { BlockDef, SuitDef } from './data';
 import type { AppState, Tab } from './types';
 import { loadState, saveState, getTodayTasks, getToday, getWeek, getMonth, getSyncConfig, setSyncConfig, syncPush, syncPull, isTaskCompleted, getRecurringTasks } from './utils';
@@ -21,12 +21,6 @@ const ASSETS = {
 };
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
-
-function drawBlock(): BlockDef {
-  let r = Math.random() * TOTAL_WEIGHT;
-  for (const b of BLOCKS) { r -= b.weight; if (r <= 0) return b; }
-  return BLOCKS[0];
-}
 
 // ─── Tab 配置（MC材质图标）────────────────────────────────────
 const MC_TABS: { k: Tab; l: string; icon: string }[] = [

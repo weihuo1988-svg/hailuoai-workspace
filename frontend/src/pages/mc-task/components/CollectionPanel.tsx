@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { BLOCKS, TOOLS, ARMORS, SUITS } from '../data';
+import { BLOCKS, BLOCKS_BY_RARITY, RARITY_ORDER, RARITY_CONFIG, TOOLS, ARMORS, SUITS } from '../data';
+import type { Rarity } from '../data';
 import type { AppState } from '../types';
 import {
-  BLOCK_TEXTURE_MAP, ITEM_TEXTURE_MAP, SUIT_ICON_MAP,
+  ITEM_TEXTURE_MAP, SUIT_ICON_MAP,
   MC_BLOCKS_BASE, MC_ITEMS_BASE, MC_LOCAL_BASE, mcImgStyle38, mcImgStyle32,
+  getBlockTexture,
 } from '../mcTextures';
 
 type CTab = 'blocks' | 'tools' | 'suits' | 'armors';
@@ -70,8 +72,10 @@ export function CollectionPanel({ blocks, tools, suits, armors }: Pick<AppState,
     gap: 8,
   };
 
-  // ── 方块收藏 ────────────────────────────────────────────────
+  // ── 方块收藏（按稀有度分组）──────────────────────────────────
   if (tab === 'blocks') {
+    const totalCollected = Object.values(blocks).reduce((a, b) => a + b, 0);
+    const uniqueOwned = BLOCKS.filter(b => (blocks[b.id] || 0) > 0).length;
     return (
       <div>
         {/* Tab 切换 */}
@@ -86,30 +90,48 @@ export function CollectionPanel({ blocks, tools, suits, armors }: Pick<AppState,
         <div style={{ animation: 'fadeIn 0.2s ease' }}>
           <div style={sectionTitle}>
             <McImg src={MC_BLOCKS_BASE + 'bricks.png'} alt="方块" style={{ width: 16, height: 16 }} />
-            方块收藏 ({Object.values(blocks).reduce((a, b) => a + b, 0)} / {BLOCKS.length})
+            方块收藏 ({uniqueOwned}/{BLOCKS.length}种 共{totalCollected}个)
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 10 }}>
-            {BLOCKS.map((b) => {
-              const cnt = blocks[b.id] || 0;
-              const tex = MC_BLOCKS_BASE + (BLOCK_TEXTURE_MAP[b.id] ?? 'diamond_block.png');
-              return (
-                <div key={b.id} style={{
-                  background: 'rgba(20,20,40,0.85)',
-                  border: `3px solid ${cnt > 0 ? b.color : '#333'}`,
-                  borderRadius: 0,
-                  padding: 12,
-                  textAlign: 'center',
-                  opacity: cnt > 0 ? 1 : 0.3,
-                  boxShadow: cnt > 0 ? `3px 3px 0 ${b.glowColor}55, 0 0 12px ${b.glowColor}33` : '3px 3px 0 #111',
-                  transition: 'all 0.2s',
+          {RARITY_ORDER.map((rarity) => {
+            const pool = BLOCKS_BY_RARITY[rarity];
+            const cfg = RARITY_CONFIG[rarity];
+            const ownedInTier = pool.filter(b => (blocks[b.id] || 0) > 0).length;
+            return (
+              <div key={rarity} style={{ marginBottom: 16 }}>
+                <div style={{
+                  fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: cfg.color,
+                  marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '4px 8px', background: `${cfg.color}15`, border: `1px solid ${cfg.color}30`,
                 }}>
-                  <McImg src={tex} alt={b.name} style={mcImgStyle38} />
-                  <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 6, color: '#AAA', marginTop: 4, lineHeight: 1.5 }}>{b.name}</div>
-                  <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 9, color: cnt > 0 ? '#FFD700' : '#444', marginTop: 4 }}>×{cnt}</div>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, display: 'inline-block', flexShrink: 0 }} />
+                  {cfg.label} ({ownedInTier}/{pool.length})
+                  <span style={{ fontSize: 6, color: '#666', marginLeft: 'auto' }}>{Math.round(cfg.prob * 100)}%</span>
                 </div>
-              );
-            })}
-          </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 8 }}>
+                  {pool.map((b) => {
+                    const cnt = blocks[b.id] || 0;
+                    const tex = getBlockTexture(b.id);
+                    return (
+                      <div key={b.id} style={{
+                        background: 'rgba(20,20,40,0.85)',
+                        border: `2px solid ${cnt > 0 ? cfg.color : '#333'}`,
+                        borderRadius: 0,
+                        padding: 8,
+                        textAlign: 'center',
+                        opacity: cnt > 0 ? 1 : 0.25,
+                        boxShadow: cnt > 0 ? `2px 2px 0 ${cfg.glow}55, 0 0 8px ${cfg.glow}22` : '2px 2px 0 #111',
+                        transition: 'all 0.2s',
+                      }}>
+                        <McImg src={tex} alt={b.name} style={{ width: 32, height: 32, imageRendering: 'pixelated' as const }} />
+                        <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 5, color: '#AAA', marginTop: 3, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</div>
+                        <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: cnt > 0 ? '#FFD700' : '#444', marginTop: 2 }}>×{cnt}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -192,7 +214,7 @@ export function CollectionPanel({ blocks, tools, suits, armors }: Pick<AppState,
             const progress = Math.min(100, Math.round((cnt / suit.blockRequired) * 100));
             const suitTex = MC_BLOCKS_BASE + (SUIT_ICON_MAP[suit.id] ?? 'diamond_block.png');
             const requiredBlock = BLOCKS.find(b => b.id === suit.blockId);
-            const reqBlockTex = requiredBlock ? MC_BLOCKS_BASE + (BLOCK_TEXTURE_MAP[requiredBlock.id] ?? 'diamond_block.png') : '';
+            const reqBlockTex = requiredBlock ? getBlockTexture(requiredBlock.id) : '';
             return (
               <div key={suit.id} style={{
                 ...cardBg,

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { BlockDef, SuitDef } from '../data';
-import { BLOCK_TEXTURE_MAP, SUIT_ICON_MAP, MC_BLOCKS_BASE, MC_LOCAL_BASE } from '../mcTextures';
+import { RARITY_CONFIG } from '../data';
+import { SUIT_ICON_MAP, MC_BLOCKS_BASE, MC_LOCAL_BASE, getBlockTexture } from '../mcTextures';
 
 // ─── MC图片组件 ───────────────────────────────────────────────
 function McImg({ src, alt, style }: { src: string; alt?: string; style?: React.CSSProperties }) {
@@ -33,14 +34,10 @@ export function ChestAnim({ block, done }: { block: BlockDef; done: () => void }
     return () => t.forEach(clearTimeout);
   }, [done]);
 
-  const rarityLabel =
-    block.id === 'end'      ? '『 无尽奇迹 』' :
-    block.id === 'bedrock'  ? '『 传说品质 』' :
-    block.id === 'netherite'? '『 珍稀品质 』' :
-    block.id === 'obsidian' ? '『 稀有品质 』' :
-    block.weight <= 80     ? '『 不常见 』' : '『 普通 』';
+  const rarityCfg = RARITY_CONFIG[block.rarity];
+  const rarityLabel = `『 ${rarityCfg.label} 』`;
 
-  const blockTex = MC_BLOCKS_BASE + (BLOCK_TEXTURE_MAP[block.id] ?? 'diamond_block.png');
+  const blockTex = getBlockTexture(block.id);
   const chestTex = p >= 1 ? MC_LOCAL_BASE + 'chest_open.png' : MC_LOCAL_BASE + 'chest_closed.png';
 
   return (
@@ -65,7 +62,7 @@ export function ChestAnim({ block, done }: { block: BlockDef; done: () => void }
       <div style={{
         transition: 'transform 0.25s ease, filter 0.3s',
         transform: p >= 1 ? 'perspective(400px) rotateX(-30deg) translateY(-20px) scale(1.1)' : 'none',
-        filter: p >= 1 ? `drop-shadow(0 0 30px ${block.glowColor})` : 'none',
+        filter: p >= 1 ? `drop-shadow(0 0 30px ${rarityCfg.glow})` : 'none',
       }}>
         <McImg src={chestTex} alt="宝箱" style={{ width: 90, height: 90 }} />
       </div>
@@ -74,7 +71,7 @@ export function ChestAnim({ block, done }: { block: BlockDef; done: () => void }
       {p >= 2 && (
         <div className="block-pop" style={{
           marginTop: 8,
-          filter: `drop-shadow(0 0 24px ${block.glowColor})`,
+          filter: `drop-shadow(0 0 24px ${rarityCfg.glow})`,
         }}>
           <McImg src={blockTex} alt={block.name} style={{ width: 96, height: 96 }} />
         </div>
@@ -83,8 +80,8 @@ export function ChestAnim({ block, done }: { block: BlockDef; done: () => void }
       {/* 名称 */}
       {p >= 3 && (
         <div style={{
-          fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: block.color,
-          marginTop: 18, textShadow: `0 0 14px ${block.glowColor}`,
+          fontFamily: "'Press Start 2P',monospace", fontSize: 12, color: rarityCfg.color,
+          marginTop: 18, textShadow: `0 0 14px ${rarityCfg.glow}`,
           animation: 'fadeSlideUp 0.4s ease', textAlign: 'center',
           padding: '0 20px', lineHeight: 2,
         }}>
@@ -96,7 +93,7 @@ export function ChestAnim({ block, done }: { block: BlockDef; done: () => void }
       {p >= 3 && (
         <div style={{
           fontFamily: "'Press Start 2P',monospace", fontSize: 8,
-          color: block.glowColor, marginTop: 8, opacity: 0.8,
+          color: rarityCfg.glow, marginTop: 8, opacity: 0.8,
         }}>
           {rarityLabel}
         </div>

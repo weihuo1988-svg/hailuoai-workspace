@@ -3,37 +3,28 @@
  * 所有MC图片使用: image-rendering: pixelated
  */
 
-// ─── 稀有度配置 ─────────────────────────────────────────────
-export const RARITY = {
-  common:    { color: '#FFFFFF', glow: '#9E9E9E', label: '普通',     shadow: '#555555' },
-  uncommon:  { color: '#4CAF50', glow: '#388E3C', label: '不常见',   shadow: '#2E7D32' },
-  rare:      { color: '#2196F3', glow: '#1976D2', label: '稀有',     shadow: '#1565C0' },
-  epic:      { color: '#9C27B0', glow: '#7B1FA2', label: '珍稀',     shadow: '#6A1B9A' },
-  legendary: { color: '#FF9800', glow: '#F57C00', label: '传说',     shadow: '#EF6C00' },
-  endless:   { color: '#E91E63', glow: '#C2185B', label: '无尽',     shadow: '#AD1457', rainbow: true },
-} as const;
+import { BLOCKS } from './data';
+import type { BlockDef } from './data';
 
 // ─── 基础路径 ────────────────────────────────────────────────
 export const MC_BLOCKS_BASE = '/mc-textures/blocks/';
 export const MC_ITEMS_BASE  = '/mc-textures/items/';
 export const MC_LOCAL_BASE  = '/mc/';
 
-// ─── 方块 ID → 素材路径（blocks/）───────────────────────────
-export const BLOCK_TEXTURE_MAP: Record<string, string> = {
-  tnt:        'tnt_top.png',
-  leaves:     'oak_leaves.png',
-  pumpkin:    'carved_pumpkin.png',
-  melon:      'melon_side.png',
-  netherrack: 'netherrack.png',
-  grass:      'grass_block_top.png',
-  dirt:       'dirt.png',
-  wood:       'oak_log.png',
-  obsidian:   'obsidian.png',
-  netherite:  'netherite_block.png',
-  bedrock:    'bedrock.png',
-  end:        'end_stone.png',
-  iron_ingot: 'iron_block.png',
-};
+// ─── 方块 ID → 纹理路径（从 BLOCKS 数据自动生成）──────────────
+const _blockTextureCache = new Map<string, BlockDef>();
+for (const b of BLOCKS) _blockTextureCache.set(b.id, b);
+
+export function getBlockTexture(blockId: string): string {
+  const b = _blockTextureCache.get(blockId);
+  if (!b) return MC_BLOCKS_BASE + 'diamond_block.png';
+  const base = b.texturePath === 'items' ? MC_ITEMS_BASE : MC_BLOCKS_BASE;
+  return base + b.texture;
+}
+
+// 兼容旧代码引用
+export const BLOCK_TEXTURE_MAP: Record<string, string> = {};
+for (const b of BLOCKS) BLOCK_TEXTURE_MAP[b.id] = b.texture;
 
 // ─── 工具/护甲 ID → 素材路径（items/）────────────────────────
 export const ITEM_TEXTURE_MAP: Record<string, string> = {
@@ -108,10 +99,6 @@ export const STAT_ICON_MAP: Record<string, string> = {
 };
 
 // ─── 工具函数 ────────────────────────────────────────────────
-export function getBlockTexture(blockId: string): string {
-  return MC_BLOCKS_BASE + (BLOCK_TEXTURE_MAP[blockId] ?? 'diamond_block.png');
-}
-
 export function getItemTexture(itemId: string): string {
   return MC_ITEMS_BASE + (ITEM_TEXTURE_MAP[itemId] ?? 'diamond_sword.png');
 }
