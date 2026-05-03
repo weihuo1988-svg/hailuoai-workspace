@@ -127,15 +127,14 @@ export function AddTaskForm({ onAdd }: { onAdd: (t: Omit<Task, 'id' | 'createdAt
   const [freq, setFreq] = useState<'once'|'daily'|'weekly'|'monthly'>('daily');
   const [monthlyLimit, setMonthlyLimit] = useState(10);
   const [chests, setChests] = useState(1);
-  const [pw, setPw] = useState('123456');
 
   const i: React.CSSProperties = { background: '#1A1A1A', border: '2px solid #555', color: '#FFF', fontFamily: 'monospace', fontSize: 14, padding: '10px 12px', borderRadius: 0, outline: 'none', width: '100%', boxSizing: 'border-box' };
   const lbl: React.CSSProperties = { color: '#AAA', fontSize: 10, fontFamily: "'Press Start 2P',monospace", whiteSpace: 'nowrap', minWidth: 72 };
 
   const submit = () => {
     if (!name.trim()) return;
-    onAdd({ name: name.trim(), description: desc.trim(), frequency: freq, monthlyLimit, chests, password: pw || '123456' });
-    setName(''); setDesc(''); setFreq('daily'); setChests(1); setPw('123456');
+    onAdd({ name: name.trim(), description: desc.trim(), frequency: freq, monthlyLimit, chests: Math.min(chests, 10), password: '7777777' });
+    setName(''); setDesc(''); setFreq('daily'); setChests(1);
   };
 
   return (
@@ -156,9 +155,8 @@ export function AddTaskForm({ onAdd }: { onAdd: (t: Omit<Task, 'id' | 'createdAt
         )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={lbl}>奖励宝箱</label>
-          <input type="number" value={chests} min={1} max={99} onChange={(e) => setChests(parseInt(e.target.value) || 1)} style={{ ...i, width: 70 }} />
-          <label style={{ ...lbl, marginLeft: 8 }}>完成密码</label>
-          <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="家长密码" maxLength={10} style={{ ...i, width: 110 }} />
+          <input type="number" value={chests} min={1} max={10} onChange={(e) => setChests(Math.min(parseInt(e.target.value) || 1, 10))} style={{ ...i, width: 70 }} />
+          <span style={{ fontSize: 10, color: '#888' }}>（最多10个）</span>
         </div>
         <button onClick={submit} disabled={!name.trim()} style={{
           background: name.trim() ? 'linear-gradient(180deg,#4CAF50,#2E7D32)' : '#333',
