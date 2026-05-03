@@ -68,6 +68,17 @@ export const ITEM_TEXTURE_MAP: Record<string, string> = {
   diamond_chest:  'diamond_chestplate.png',
   diamond_pants: 'diamond_leggings.png',
   diamond_boots: 'diamond_boots.png',
+  // 下界合金工具
+  netherite_sword:   'netherite_sword.png',
+  netherite_axe:     'netherite_axe.png',
+  netherite_pickaxe: 'netherite_pickaxe.png',
+  netherite_hoe:     'netherite_hoe.png',
+  netherite_shovel:  'netherite_shovel.png',
+  // 下界合金护甲
+  netherite_helmet:  'netherite_helmet.png',
+  netherite_chest:   'netherite_chestplate.png',
+  netherite_pants:   'netherite_leggings.png',
+  netherite_boots:   'netherite_boots.png',
 };
 
 // ─── 套装代表图标 ────────────────────────────────────────────

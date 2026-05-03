@@ -1,6 +1,6 @@
 // ─── Game Data ────────────────────────────────────────────
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-export type MaterialGroup = 'wood' | 'stone' | 'plant' | 'iron' | 'gem';
+export type MaterialGroup = 'wood' | 'stone' | 'plant' | 'iron' | 'gem' | 'nether';
 export interface BlockDef { id: string; name: string; rarity: Rarity; weight: number; texture: string; texturePath?: 'items'; }
 export interface ItemDef { id: string; name: string; suitId: string; }
 export interface Recipe { itemId: string; material: MaterialGroup; cost: number; }
@@ -170,14 +170,15 @@ export const MATERIAL_GROUPS: Record<MaterialGroup, string[]> = {
   plant: ['oak_leaves','birch_leaves','spruce_leaves','oak_sapling','birch_sapling','spruce_sapling'],
   iron:  ['iron_ore','copper_ore','coal_ore','iron_block','copper_block','coal_block','gold_ore','gold_block'],
   gem:   ['diamond_ore','emerald_ore','lapis_ore','diamond_block','emerald_block','lapis_block'],
+  nether:['netherite_block','ancient_debris','polished_blackstone','ancient_debris_top','gilded_blackstone'],
 };
 
 export const MATERIAL_GROUP_NAMES: Record<MaterialGroup, string> = {
-  wood: '木材', stone: '石材', plant: '植物', iron: '铁锭', gem: '宝石',
+  wood: '木材', stone: '石材', plant: '植物', iron: '铁锭', gem: '宝石', nether: '下界',
 };
 
 export const MATERIAL_GROUP_ICONS: Record<MaterialGroup, string> = {
-  wood: 'oak_planks', stone: 'cobblestone', plant: 'oak_leaves', iron: 'iron_block', gem: 'diamond_block',
+  wood: 'oak_planks', stone: 'cobblestone', plant: 'oak_leaves', iron: 'iron_block', gem: 'diamond_block', nether: 'netherite_block',
 };
 
 /** 计算玩家某材料组可用库存 */
@@ -241,6 +242,17 @@ export const ITEMS: ItemDef[] = [
   { id: 'diamond_chest', name: '钻石胸甲', suitId: 'diamond_armor' },
   { id: 'diamond_pants', name: '钻石护腿', suitId: 'diamond_armor' },
   { id: 'diamond_boots', name: '钻石靴', suitId: 'diamond_armor' },
+  // 下界合金工具
+  { id: 'netherite_sword', name: '下界合金剑', suitId: 'netherite_suit' },
+  { id: 'netherite_axe', name: '下界合金斧', suitId: 'netherite_suit' },
+  { id: 'netherite_pickaxe', name: '下界合金镐', suitId: 'netherite_suit' },
+  { id: 'netherite_hoe', name: '下界合金锄', suitId: 'netherite_suit' },
+  { id: 'netherite_shovel', name: '下界合金铲', suitId: 'netherite_suit' },
+  // 下界合金护甲
+  { id: 'netherite_helmet', name: '下界合金头盔', suitId: 'netherite_suit' },
+  { id: 'netherite_chest', name: '下界合金胸甲', suitId: 'netherite_suit' },
+  { id: 'netherite_pants', name: '下界合金护腿', suitId: 'netherite_suit' },
+  { id: 'netherite_boots', name: '下界合金靴', suitId: 'netherite_suit' },
 ];
 
 // ─── 兑换配方 ─────────────────────────────────────────────
@@ -285,6 +297,17 @@ export const RECIPES: Recipe[] = [
   { itemId: 'diamond_chest', material: 'gem', cost: 3 },
   { itemId: 'diamond_pants', material: 'gem', cost: 2 },
   { itemId: 'diamond_boots', material: 'gem', cost: 1 },
+  // 下界合金工具 (下界)
+  { itemId: 'netherite_sword', material: 'nether', cost: 1 },
+  { itemId: 'netherite_axe', material: 'nether', cost: 1 },
+  { itemId: 'netherite_pickaxe', material: 'nether', cost: 1 },
+  { itemId: 'netherite_hoe', material: 'nether', cost: 1 },
+  { itemId: 'netherite_shovel', material: 'nether', cost: 1 },
+  // 下界合金护甲 (下界)
+  { itemId: 'netherite_helmet', material: 'nether', cost: 1 },
+  { itemId: 'netherite_chest', material: 'nether', cost: 1 },
+  { itemId: 'netherite_pants', material: 'nether', cost: 1 },
+  { itemId: 'netherite_boots', material: 'nether', cost: 1 },
 ];
 
 export const RECIPE_MAP: Record<string, Recipe> = {};
@@ -299,6 +322,7 @@ export const SUITS: SuitDef[] = [
   { id: 'leather', name: '皮革护甲套装', emoji: '', color: '#A1887F', glowColor: '#6D4C41', requiredItems: ['leather_helmet','leather_chest','leather_pants','leather_boots'] },
   { id: 'iron_armor', name: '铁护甲套装', emoji: '', color: '#90A4AE', glowColor: '#546E7A', requiredItems: ['iron_helmet','iron_chest','iron_pants','iron_boots'] },
   { id: 'diamond_armor', name: '钻石护甲套装', emoji: '', color: '#4DD0E1', glowColor: '#00BCD4', requiredItems: ['diamond_helmet','diamond_chest','diamond_pants','diamond_boots'] },
+  { id: 'netherite_suit', name: '下界合金套装', emoji: '', color: '#6D4C41', glowColor: '#3E2723', requiredItems: ['netherite_sword','netherite_axe','netherite_pickaxe','netherite_hoe','netherite_shovel','netherite_helmet','netherite_chest','netherite_pants','netherite_boots'] },
 ];
 
 export const STORAGE_KEY = 'mc-task-tool-v1';
