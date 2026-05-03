@@ -29,6 +29,26 @@ export function getTodayTasks(tasks: AppState['tasks']) {
   });
 }
 
+export function isTaskCompleted(task: AppState['tasks'][0]): boolean {
+  const today = getToday();
+  if (task.frequency === 'once') return task.lastCompletedAt === 'done';
+  if (task.frequency === 'daily') return task.lastCompletedAt === today;
+  if (task.frequency === 'weekly') return !!task.completedThisWeek;
+  if (task.frequency === 'monthly') return (task.monthlyCount || 0) >= task.monthlyLimit;
+  return false;
+}
+
+// 获取所有重复任务（排除已删除的单次任务），未完成的排前面
+export function getRecurringTasks(tasks: AppState['tasks']) {
+  return tasks
+    .filter(t => t.frequency !== 'once' || t.lastCompletedAt !== 'done')
+    .sort((a, b) => {
+      const ac = isTaskCompleted(a) ? 1 : 0;
+      const bc = isTaskCompleted(b) ? 1 : 0;
+      return ac - bc;
+    });
+}
+
 // ─── 云同步（基于 /api/sync 接口 + 共享 userId）──────────────
 const SYNC_CFG_KEY = 'mc-task-sync-cfg';
 const API_BASE = window.location.origin;

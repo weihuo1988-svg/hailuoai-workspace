@@ -8,9 +8,10 @@ interface TaskCardProps {
   onComplete: (id: string) => void;
   onDelete?: (id: string) => void;
   showPasswordOnComplete?: boolean;
+  completed?: boolean;
 }
 
-export function TaskCard({ task, onComplete, onDelete, showPasswordOnComplete }: TaskCardProps) {
+export function TaskCard({ task, onComplete, onDelete, showPasswordOnComplete, completed }: TaskCardProps) {
   const [open, setOpen] = useState(false);
   const [pw, setPw]     = useState('');
   const [err, setErr]   = useState(false);
@@ -31,25 +32,35 @@ export function TaskCard({ task, onComplete, onDelete, showPasswordOnComplete }:
   return (
     <>
       <div style={{
-        background: 'rgba(30,30,50,0.88)', border: '3px solid #5C9E3E',
+        background: completed ? 'rgba(30,30,50,0.5)' : 'rgba(30,30,50,0.88)',
+        border: `3px solid ${completed ? '#555' : '#5C9E3E'}`,
         borderRadius: 0, padding: 14, marginBottom: 10, position: 'relative',
-        boxShadow: '4px 4px 0 #1B5E20', backdropFilter: 'blur(4px)',
+        boxShadow: completed ? '4px 4px 0 #333' : '4px 4px 0 #1B5E20',
+        backdropFilter: 'blur(4px)',
         animation: 'fadeIn 0.2s ease',
+        opacity: completed ? 0.7 : 1,
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 9, color: '#FFF', marginBottom: 6, lineHeight: 1.6 }}>{task.name}</div>
-            {task.description && <div style={{ fontSize: 12, color: '#AAA', marginBottom: 8 }}>{task.description}</div>}
+            <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 9, color: completed ? '#888' : '#FFF', marginBottom: 6, lineHeight: 1.6 }}>{task.name}</div>
+            {task.description && <div style={{ fontSize: 12, color: completed ? '#666' : '#AAA', marginBottom: 8 }}>{task.description}</div>}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ background: '#4CAF50', color: '#fff', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0 }}>{freqMap[task.frequency]}{task.frequency === 'monthly' ? task.monthlyLimit + '次' : ''}</span>
-              <span style={{ background: '#FF9800', color: '#fff', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0 }}>🎁 {task.chests}箱</span>
+              <span style={{ background: completed ? '#555' : '#4CAF50', color: '#fff', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0 }}>{freqMap[task.frequency]}{task.frequency === 'monthly' ? task.monthlyLimit + '次' : ''}</span>
+              <span style={{ background: completed ? '#555' : '#FF9800', color: '#fff', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0 }}>🎁 {task.chests}箱</span>
+              {completed && (
+                <span style={{ background: '#2E7D32', color: '#8f8', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0 }}>已完成</span>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            {onDelete && (
+            {onDelete && !completed && (
               <button onClick={() => onDelete(task.id)} style={{ background: '#C62828', border: '2px solid #7f0000', color: '#fff', fontFamily: "'Press Start 2P',monospace", fontSize: 7, padding: '6px 10px', cursor: 'pointer', borderRadius: 0, boxShadow: '2px 2px 0 #7f0000' }}>删除</button>
             )}
-            <button onClick={handleClick} style={{ background: 'linear-gradient(180deg,#4CAF50,#2E7D32)', border: '3px solid #1B5E20', color: '#fff', fontFamily: "'Press Start 2P',monospace", fontSize: 7, padding: '8px 12px', cursor: 'pointer', borderRadius: 0, boxShadow: '3px 3px 0 #1B5E20' }}>完成了！</button>
+            {completed ? (
+              <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 8, color: '#4CAF50', padding: '8px 12px' }}>&#x2714;</div>
+            ) : (
+              <button onClick={handleClick} style={{ background: 'linear-gradient(180deg,#4CAF50,#2E7D32)', border: '3px solid #1B5E20', color: '#fff', fontFamily: "'Press Start 2P',monospace", fontSize: 7, padding: '8px 12px', cursor: 'pointer', borderRadius: 0, boxShadow: '3px 3px 0 #1B5E20' }}>完成了！</button>
+            )}
           </div>
         </div>
       </div>

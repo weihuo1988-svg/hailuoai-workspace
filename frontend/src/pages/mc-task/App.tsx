@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { BLOCKS, SUITS, TOTAL_WEIGHT } from './data';
 import type { BlockDef, SuitDef } from './data';
 import type { AppState, Tab } from './types';
-import { loadState, saveState, getTodayTasks, getToday, getWeek, getMonth, getSyncConfig, setSyncConfig, syncPush, syncPull } from './utils';
+import { loadState, saveState, getTodayTasks, getToday, getWeek, getMonth, getSyncConfig, setSyncConfig, syncPush, syncPull, isTaskCompleted, getRecurringTasks } from './utils';
 import { TaskCard, AddTaskForm } from './components/TaskCard';
 import { CollectionPanel } from './components/CollectionPanel';
 import { ChestAnim, SuitAnim } from './components/ChestAnimations';
@@ -101,28 +101,33 @@ export default function McTaskApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 周期重置
+  // 周期重置（组件挂载时 + 每分钟检测跨天）
   useEffect(() => {
-    const today = getToday(), week = getWeek(), month = getMonth();
-    let changed = false;
-    const tasks = state.tasks.map((t) => {
-      if (t.frequency === 'daily' && t.lastCompletedAt !== today && t.lastCompletedAt !== 'done') {
-        changed = true; return { ...t, lastCompletedAt: null };
-      }
-      return t;
-    });
-    if (state.weeklyResetWeek !== week) {
-      changed = true;
-      tasks.forEach((t) => { if (t.frequency === 'weekly') (t as any).completedThisWeek = false; });
-    }
-    if (state.monthlyResetMonth !== month) {
-      changed = true;
-      tasks.forEach((t) => { if (t.frequency === 'monthly') (t as any).monthlyCount = 0; });
-    }
-    if (changed) {
-      setState((s) => ({ ...s, tasks, lastResetDate: today, weeklyResetWeek: week, monthlyResetMonth: month }));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const doReset = () => {
+      const today = getToday(), week = getWeek(), month = getMonth();
+      setState((s) => {
+        let changed = false;
+        const tasks = s.tasks.map((t) => {
+          if (t.frequency === 'daily' && t.lastCompletedAt !== today && t.lastCompletedAt !== 'done' && t.lastCompletedAt !== null) {
+            changed = true; return { ...t, lastCompletedAt: null };
+          }
+          return t;
+        });
+        if (s.weeklyResetWeek !== week) {
+          changed = true;
+          tasks.forEach((t) => { if (t.frequency === 'weekly') (t as any).completedThisWeek = false; });
+        }
+        if (s.monthlyResetMonth !== month) {
+          changed = true;
+          tasks.forEach((t) => { if (t.frequency === 'monthly') (t as any).monthlyCount = 0; });
+        }
+        if (!changed) return s;
+        return { ...s, tasks, lastResetDate: today, weeklyResetWeek: week, monthlyResetMonth: month };
+      });
+    };
+    doReset();
+    const timer = setInterval(doReset, 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -203,6 +208,7 @@ export default function McTaskApp() {
   }, []);
 
   const todayTasks = getTodayTasks(state.tasks);
+  const allTasks = getRecurringTasks(state.tasks);
   const today = getToday();
   const completedToday = state.tasks.filter(t => {
     if (t.frequency === 'daily') return t.lastCompletedAt === today;
@@ -343,7 +349,7 @@ export default function McTaskApp() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <McImg src={MC_ITEMS_BASE + 'diamond_sword.png'} alt="任务" style={{ width: 26, height: 26 }} />
               <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 10, color: '#4CAF50' }}>
-                今日任务 <span style={{ color: '#888', fontSize: 8 }}>({todayTasks.length}个)</span>
+                今日任务 <span style={{ color: '#888', fontSize: 8 }}>(待完成{todayTasks.length}/{allTasks.length})</span>
               </div>
               <button
                 onClick={() => setShowAddForm(v => !v)}
@@ -366,23 +372,30 @@ export default function McTaskApp() {
               </div>
             )}
 
-            {/* 空状态 */}
-            {todayTasks.length === 0 && !showAddForm ? (
+            {/* 任务列表：未完成在前，已完成灰色显示 */}
+            {allTasks.length === 0 && !showAddForm ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', background: 'rgba(30,30,50,0.7)', border: '3px dashed #4CAF50', borderRadius: 0, backdropFilter: 'blur(4px)' }}>
                 <img src={ASSETS.badge} alt="" style={{ width: 72, height: 72, marginBottom: 16, imageRendering: 'pixelated' }} />
-                <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: '#4CAF50', lineHeight: 2 }}>太棒了！🎉</div>
-                <div style={{ fontSize: 15, color: '#AAA', marginTop: 8 }}>所有任务已完成，继续保持！</div>
+                <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 11, color: '#4CAF50', lineHeight: 2 }}>还没有任务</div>
+                <div style={{ fontSize: 15, color: '#AAA', marginTop: 8 }}>点击上方创建任务吧！</div>
               </div>
             ) : (
-              todayTasks.map((task) => (
+              allTasks.map((task) => (
                 <TaskCard
                   key={task.id}
                   task={task}
+                  completed={isTaskCompleted(task)}
                   onComplete={completeTask}
                   onDelete={deleteTask}
                   showPasswordOnComplete={true}
                 />
               ))
+            )}
+            {/* 全部完成提示 */}
+            {allTasks.length > 0 && todayTasks.length === 0 && !showAddForm && (
+              <div style={{ textAlign: 'center', padding: '20px', background: 'rgba(30,50,30,0.5)', border: '2px solid #4CAF50', marginTop: 10 }}>
+                <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 9, color: '#4CAF50', lineHeight: 2 }}>太棒了！🎉 今日任务全部完成！</div>
+              </div>
             )}
           </div>
         )}
