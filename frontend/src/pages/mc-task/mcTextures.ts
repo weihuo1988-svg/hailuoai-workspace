@@ -103,8 +103,11 @@ export function getItemTexture(itemId: string): string {
   return MC_ITEMS_BASE + (ITEM_TEXTURE_MAP[itemId] ?? 'diamond_sword.png');
 }
 
+const SUIT_ITEMS_PATH = new Set(['leather', 'iron_armor', 'diamond_armor']);
+
 export function getSuitTexture(suitId: string): string {
-  return MC_BLOCKS_BASE + (SUIT_ICON_MAP[suitId] ?? 'diamond_block.png');
+  const base = SUIT_ITEMS_PATH.has(suitId) ? MC_ITEMS_BASE : MC_BLOCKS_BASE;
+  return base + (SUIT_ICON_MAP[suitId] ?? 'diamond_block.png');
 }
 
 export function getMCImgUrl(path: string): string {

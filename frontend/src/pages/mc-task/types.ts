@@ -10,8 +10,8 @@ export interface Task {
 export interface Chest { id: string; createdAt: string; }
 export interface AppState {
   tasks: Task[]; chests: Chest[]; blocks: Record<string, number>;
-  tools: Record<string, boolean>; suits: Record<string, boolean>;
-  armors: Record<string, boolean>; parentPin: string;
+  items: Record<string, boolean>; suits: Record<string, boolean>;
+  parentPin: string;
   lastResetDate: string; weeklyResetWeek: string; monthlyResetMonth: string;
 }
 export type Tab = 'tasks' | 'chests' | 'collection';

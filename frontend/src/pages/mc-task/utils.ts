@@ -13,8 +13,21 @@ const EXAMPLE_TASKS: AppState['tasks'] = [
 ];
 
 export function loadState(): AppState {
-  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch {}
-  return { tasks: EXAMPLE_TASKS, chests: [], blocks: {}, tools: {}, suits: {}, armors: {}, parentPin: DEFAULT_PIN, lastResetDate: getToday(), weeklyResetWeek: getWeek(), monthlyResetMonth: getMonth() };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      // 数据迁移：tools + armors → items
+      if (s.tools || s.armors) {
+        s.items = { ...s.tools, ...s.armors, ...(s.items || {}) };
+        delete s.tools;
+        delete s.armors;
+      }
+      if (!s.items) s.items = {};
+      return s;
+    }
+  } catch {}
+  return { tasks: EXAMPLE_TASKS, chests: [], blocks: {}, items: {}, suits: {}, parentPin: DEFAULT_PIN, lastResetDate: getToday(), weeklyResetWeek: getWeek(), monthlyResetMonth: getMonth() };
 }
 
 export function saveState(s: AppState): void { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { BlockDef, SuitDef } from '../data';
 import { RARITY_CONFIG } from '../data';
-import { SUIT_ICON_MAP, MC_BLOCKS_BASE, MC_LOCAL_BASE, getBlockTexture } from '../mcTextures';
+import { MC_LOCAL_BASE, getBlockTexture, getSuitTexture } from '../mcTextures';
 
 // ─── MC图片组件 ───────────────────────────────────────────────
 function McImg({ src, alt, style }: { src: string; alt?: string; style?: React.CSSProperties }) {
@@ -142,7 +142,7 @@ export function SuitAnim({ suit, done }: { suit: SuitDef; done: () => void }) {
     return () => t.forEach(clearTimeout);
   }, [done]);
 
-  const suitTex = MC_BLOCKS_BASE + (SUIT_ICON_MAP[suit.id] ?? 'diamond_block.png');
+  const suitTex = getSuitTexture(suit.id);
 
   return (
     <div onClick={done} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999, cursor: 'pointer', userSelect: 'none' }}>

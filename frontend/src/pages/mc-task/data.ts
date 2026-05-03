@@ -1,9 +1,10 @@
 // ─── Game Data ────────────────────────────────────────────
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type MaterialGroup = 'wood' | 'stone' | 'plant' | 'iron' | 'gem';
 export interface BlockDef { id: string; name: string; rarity: Rarity; weight: number; texture: string; texturePath?: 'items'; }
-export interface ToolDef { id: string; name: string; emoji: string; suitId: string; }
-export interface ArmorDef { id: string; name: string; emoji: string; suitId: string; }
-export interface SuitDef { id: string; name: string; emoji: string; color: string; glowColor: string; blockRequired: number; blockId: string; }
+export interface ItemDef { id: string; name: string; suitId: string; }
+export interface Recipe { itemId: string; material: MaterialGroup; cost: number; }
+export interface SuitDef { id: string; name: string; emoji: string; color: string; glowColor: string; requiredItems: string[]; }
 export type Frequency = 'once' | 'daily' | 'weekly' | 'monthly';
 
 // ─── 稀有度概率 & 颜色 ──────────────────────────────────────
@@ -162,32 +163,143 @@ export function drawBlock(): BlockDef {
   return pool[0];
 }
 
-// ─── 工具 & 护甲 & 套装（暂不改动，第三四阶段重做）──────────
-export const TOOLS: ToolDef[] = [
-  { id: 'wood_sword', name: '木剑', emoji: '', suitId: 'wood' }, { id: 'wood_shield', name: '木盾', emoji: '', suitId: 'wood' }, { id: 'wood_axe', name: '木斧', emoji: '', suitId: 'wood' }, { id: 'wood_pickaxe', name: '木镐', emoji: '', suitId: 'wood' }, { id: 'wood_hoe', name: '木锄', emoji: '', suitId: 'wood' }, { id: 'wood_shovel', name: '木铲', emoji: '', suitId: 'wood' },
-  { id: 'stone_sword', name: '石剑', emoji: '', suitId: 'stone' }, { id: 'stone_axe', name: '石斧', emoji: '', suitId: 'stone' }, { id: 'stone_pickaxe', name: '石镐', emoji: '', suitId: 'stone' }, { id: 'stone_hoe', name: '石锄', emoji: '', suitId: 'stone' }, { id: 'stone_shovel', name: '石铲', emoji: '', suitId: 'stone' },
-  { id: 'iron_sword', name: '铁剑', emoji: '', suitId: 'iron' }, { id: 'iron_axe', name: '铁斧', emoji: '', suitId: 'iron' }, { id: 'iron_pickaxe', name: '铁镐', emoji: '', suitId: 'iron' }, { id: 'iron_hoe', name: '铁锄', emoji: '', suitId: 'iron' }, { id: 'iron_shovel', name: '铁铲', emoji: '', suitId: 'iron' },
-  { id: 'diamond_sword', name: '钻石剑', emoji: '', suitId: 'diamond_tool' }, { id: 'diamond_axe', name: '钻石斧', emoji: '', suitId: 'diamond_tool' }, { id: 'diamond_pickaxe', name: '钻石镐', emoji: '', suitId: 'diamond_tool' }, { id: 'diamond_hoe', name: '钻石锄', emoji: '', suitId: 'diamond_tool' }, { id: 'diamond_shovel', name: '钻石铲', emoji: '', suitId: 'diamond_tool' },
+// ─── 材料组（兑换系统核心）───────────────────────────────────
+export const MATERIAL_GROUPS: Record<MaterialGroup, string[]> = {
+  wood:  ['oak_planks','spruce_planks','birch_planks','jungle_planks','dark_oak_planks','oak_log','spruce_log','birch_log'],
+  stone: ['cobblestone','stone','andesite','diorite','granite','tuff','calcite'],
+  plant: ['oak_leaves','birch_leaves','spruce_leaves','oak_sapling','birch_sapling','spruce_sapling'],
+  iron:  ['iron_ore','copper_ore','coal_ore','iron_block','copper_block','coal_block','gold_ore','gold_block'],
+  gem:   ['diamond_ore','emerald_ore','lapis_ore','diamond_block','emerald_block','lapis_block'],
+};
+
+export const MATERIAL_GROUP_NAMES: Record<MaterialGroup, string> = {
+  wood: '木材', stone: '石材', plant: '植物', iron: '铁锭', gem: '宝石',
+};
+
+export const MATERIAL_GROUP_ICONS: Record<MaterialGroup, string> = {
+  wood: 'oak_planks', stone: 'cobblestone', plant: 'oak_leaves', iron: 'iron_block', gem: 'diamond_block',
+};
+
+/** 计算玩家某材料组可用库存 */
+export function getMaterialCount(blocks: Record<string, number>, group: MaterialGroup): number {
+  return MATERIAL_GROUPS[group].reduce((sum, id) => sum + (blocks[id] || 0), 0);
+}
+
+/** 扣减材料，返回新的 blocks 记录 */
+export function deductMaterial(blocks: Record<string, number>, group: MaterialGroup, cost: number): Record<string, number> {
+  const updated = { ...blocks };
+  let remaining = cost;
+  for (const blockId of MATERIAL_GROUPS[group]) {
+    if (remaining <= 0) break;
+    const have = updated[blockId] || 0;
+    const deduct = Math.min(have, remaining);
+    updated[blockId] = have - deduct;
+    remaining -= deduct;
+  }
+  return updated;
+}
+
+// ─── 道具（工具 + 护甲合并）──────────────────────────────────
+export const ITEMS: ItemDef[] = [
+  // 木工具
+  { id: 'wood_sword', name: '木剑', suitId: 'wood' },
+  { id: 'wood_shield', name: '木盾', suitId: 'wood' },
+  { id: 'wood_axe', name: '木斧', suitId: 'wood' },
+  { id: 'wood_pickaxe', name: '木镐', suitId: 'wood' },
+  { id: 'wood_hoe', name: '木锄', suitId: 'wood' },
+  { id: 'wood_shovel', name: '木铲', suitId: 'wood' },
+  // 石工具
+  { id: 'stone_sword', name: '石剑', suitId: 'stone' },
+  { id: 'stone_axe', name: '石斧', suitId: 'stone' },
+  { id: 'stone_pickaxe', name: '石镐', suitId: 'stone' },
+  { id: 'stone_hoe', name: '石锄', suitId: 'stone' },
+  { id: 'stone_shovel', name: '石铲', suitId: 'stone' },
+  // 铁工具
+  { id: 'iron_sword', name: '铁剑', suitId: 'iron' },
+  { id: 'iron_axe', name: '铁斧', suitId: 'iron' },
+  { id: 'iron_pickaxe', name: '铁镐', suitId: 'iron' },
+  { id: 'iron_hoe', name: '铁锄', suitId: 'iron' },
+  { id: 'iron_shovel', name: '铁铲', suitId: 'iron' },
+  // 钻石工具
+  { id: 'diamond_sword', name: '钻石剑', suitId: 'diamond_tool' },
+  { id: 'diamond_axe', name: '钻石斧', suitId: 'diamond_tool' },
+  { id: 'diamond_pickaxe', name: '钻石镐', suitId: 'diamond_tool' },
+  { id: 'diamond_hoe', name: '钻石锄', suitId: 'diamond_tool' },
+  { id: 'diamond_shovel', name: '钻石铲', suitId: 'diamond_tool' },
+  // 皮革护甲
+  { id: 'leather_helmet', name: '皮帽', suitId: 'leather' },
+  { id: 'leather_chest', name: '皮衣', suitId: 'leather' },
+  { id: 'leather_pants', name: '皮裤', suitId: 'leather' },
+  { id: 'leather_boots', name: '皮靴', suitId: 'leather' },
+  // 铁护甲
+  { id: 'iron_helmet', name: '铁头盔', suitId: 'iron_armor' },
+  { id: 'iron_chest', name: '铁胸甲', suitId: 'iron_armor' },
+  { id: 'iron_pants', name: '铁护腿', suitId: 'iron_armor' },
+  { id: 'iron_boots', name: '铁靴', suitId: 'iron_armor' },
+  // 钻石护甲
+  { id: 'diamond_helmet', name: '钻石头盔', suitId: 'diamond_armor' },
+  { id: 'diamond_chest', name: '钻石胸甲', suitId: 'diamond_armor' },
+  { id: 'diamond_pants', name: '钻石护腿', suitId: 'diamond_armor' },
+  { id: 'diamond_boots', name: '钻石靴', suitId: 'diamond_armor' },
 ];
 
-export const ARMORS: ArmorDef[] = [
-  { id: 'leather_helmet', name: '皮帽', emoji: '', suitId: 'leather' }, { id: 'leather_chest', name: '皮衣', emoji: '', suitId: 'leather' }, { id: 'leather_pants', name: '皮裤', emoji: '', suitId: 'leather' }, { id: 'leather_boots', name: '皮靴', emoji: '', suitId: 'leather' },
-  { id: 'iron_helmet', name: '铁头盔', emoji: '', suitId: 'iron_armor' }, { id: 'iron_chest', name: '铁胸甲', emoji: '', suitId: 'iron_armor' }, { id: 'iron_pants', name: '铁护腿', emoji: '', suitId: 'iron_armor' }, { id: 'iron_boots', name: '铁靴', emoji: '', suitId: 'iron_armor' },
-  { id: 'diamond_helmet', name: '钻石头盔', emoji: '', suitId: 'diamond_armor' }, { id: 'diamond_chest', name: '钻石胸甲', emoji: '', suitId: 'diamond_armor' }, { id: 'diamond_pants', name: '钻石护腿', emoji: '', suitId: 'diamond_armor' }, { id: 'diamond_boots', name: '钻石靴', emoji: '', suitId: 'diamond_armor' },
+// ─── 兑换配方 ─────────────────────────────────────────────
+export const RECIPES: Recipe[] = [
+  // 木工具 (木材)
+  { itemId: 'wood_sword', material: 'wood', cost: 2 },
+  { itemId: 'wood_shield', material: 'wood', cost: 2 },
+  { itemId: 'wood_axe', material: 'wood', cost: 2 },
+  { itemId: 'wood_pickaxe', material: 'wood', cost: 2 },
+  { itemId: 'wood_hoe', material: 'wood', cost: 1 },
+  { itemId: 'wood_shovel', material: 'wood', cost: 1 },
+  // 石工具 (石材)
+  { itemId: 'stone_sword', material: 'stone', cost: 2 },
+  { itemId: 'stone_axe', material: 'stone', cost: 2 },
+  { itemId: 'stone_pickaxe', material: 'stone', cost: 2 },
+  { itemId: 'stone_hoe', material: 'stone', cost: 1 },
+  { itemId: 'stone_shovel', material: 'stone', cost: 1 },
+  // 铁工具 (铁锭)
+  { itemId: 'iron_sword', material: 'iron', cost: 2 },
+  { itemId: 'iron_axe', material: 'iron', cost: 2 },
+  { itemId: 'iron_pickaxe', material: 'iron', cost: 2 },
+  { itemId: 'iron_hoe', material: 'iron', cost: 1 },
+  { itemId: 'iron_shovel', material: 'iron', cost: 1 },
+  // 钻石工具 (宝石)
+  { itemId: 'diamond_sword', material: 'gem', cost: 2 },
+  { itemId: 'diamond_axe', material: 'gem', cost: 2 },
+  { itemId: 'diamond_pickaxe', material: 'gem', cost: 2 },
+  { itemId: 'diamond_hoe', material: 'gem', cost: 1 },
+  { itemId: 'diamond_shovel', material: 'gem', cost: 1 },
+  // 皮革护甲 (植物)
+  { itemId: 'leather_helmet', material: 'plant', cost: 2 },
+  { itemId: 'leather_chest', material: 'plant', cost: 3 },
+  { itemId: 'leather_pants', material: 'plant', cost: 2 },
+  { itemId: 'leather_boots', material: 'plant', cost: 1 },
+  // 铁护甲 (铁锭)
+  { itemId: 'iron_helmet', material: 'iron', cost: 2 },
+  { itemId: 'iron_chest', material: 'iron', cost: 3 },
+  { itemId: 'iron_pants', material: 'iron', cost: 2 },
+  { itemId: 'iron_boots', material: 'iron', cost: 1 },
+  // 钻石护甲 (宝石)
+  { itemId: 'diamond_helmet', material: 'gem', cost: 2 },
+  { itemId: 'diamond_chest', material: 'gem', cost: 3 },
+  { itemId: 'diamond_pants', material: 'gem', cost: 2 },
+  { itemId: 'diamond_boots', material: 'gem', cost: 1 },
 ];
 
+export const RECIPE_MAP: Record<string, Recipe> = {};
+for (const r of RECIPES) RECIPE_MAP[r.itemId] = r;
+
+// ─── 套装（集齐道具 + 手动解锁）──────────────────────────────
 export const SUITS: SuitDef[] = [
-  { id: 'wood', name: '木套装', emoji: '', color: '#8D6E63', glowColor: '#5D4037', blockRequired: 10, blockId: 'oak_log' },
-  { id: 'stone', name: '石套装', emoji: '', color: '#9E9E9E', glowColor: '#616161', blockRequired: 10, blockId: 'cobblestone' },
-  { id: 'iron', name: '铁套装', emoji: '', color: '#B0BEC5', glowColor: '#78909C', blockRequired: 10, blockId: 'iron_block' },
-  { id: 'diamond_tool', name: '钻石套装', emoji: '', color: '#4DD0E1', glowColor: '#00ACC1', blockRequired: 10, blockId: 'diamond_block' },
-  { id: 'leather', name: '皮革套装', emoji: '', color: '#A1887F', glowColor: '#6D4C41', blockRequired: 10, blockId: 'oak_leaves' },
-  { id: 'iron_armor', name: '铁护甲套装', emoji: '', color: '#90A4AE', glowColor: '#546E7A', blockRequired: 10, blockId: 'iron_block' },
-  { id: 'diamond_armor', name: '钻石护甲套装', emoji: '', color: '#4DD0E1', glowColor: '#00BCD4', blockRequired: 10, blockId: 'diamond_block' },
-  { id: 'netherite_suit', name: '下界合金套装', emoji: '', color: '#1565C0', glowColor: '#0D47A1', blockRequired: 9, blockId: 'netherite_block' },
-  { id: 'end_suit', name: '无尽套装', emoji: '', color: '#7C4DFF', glowColor: '#651FFF', blockRequired: 9, blockId: 'crying_obsidian' },
+  { id: 'wood', name: '木工具套装', emoji: '', color: '#8D6E63', glowColor: '#5D4037', requiredItems: ['wood_sword','wood_shield','wood_axe','wood_pickaxe','wood_hoe','wood_shovel'] },
+  { id: 'stone', name: '石工具套装', emoji: '', color: '#9E9E9E', glowColor: '#616161', requiredItems: ['stone_sword','stone_axe','stone_pickaxe','stone_hoe','stone_shovel'] },
+  { id: 'iron', name: '铁工具套装', emoji: '', color: '#B0BEC5', glowColor: '#78909C', requiredItems: ['iron_sword','iron_axe','iron_pickaxe','iron_hoe','iron_shovel'] },
+  { id: 'diamond_tool', name: '钻石工具套装', emoji: '', color: '#4DD0E1', glowColor: '#00ACC1', requiredItems: ['diamond_sword','diamond_axe','diamond_pickaxe','diamond_hoe','diamond_shovel'] },
+  { id: 'leather', name: '皮革护甲套装', emoji: '', color: '#A1887F', glowColor: '#6D4C41', requiredItems: ['leather_helmet','leather_chest','leather_pants','leather_boots'] },
+  { id: 'iron_armor', name: '铁护甲套装', emoji: '', color: '#90A4AE', glowColor: '#546E7A', requiredItems: ['iron_helmet','iron_chest','iron_pants','iron_boots'] },
+  { id: 'diamond_armor', name: '钻石护甲套装', emoji: '', color: '#4DD0E1', glowColor: '#00BCD4', requiredItems: ['diamond_helmet','diamond_chest','diamond_pants','diamond_boots'] },
 ];
 
-export const TOTAL_WEIGHT = BLOCKS.reduce((s, b) => s + b.weight, 0);
 export const STORAGE_KEY = 'mc-task-tool-v1';
 export const DEFAULT_PIN = '123456';

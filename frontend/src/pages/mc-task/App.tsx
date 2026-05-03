@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BLOCKS, SUITS, drawBlock } from './data';
+import { BLOCKS, SUITS, ITEMS, RECIPE_MAP, drawBlock, deductMaterial, getMaterialCount } from './data';
 import type { BlockDef, SuitDef } from './data';
 import type { AppState, Tab } from './types';
 import { loadState, saveState, getTodayTasks, getToday, getWeek, getMonth, getSyncConfig, setSyncConfig, syncPush, syncPull, isTaskCompleted, getRecurringTasks } from './utils';
@@ -171,36 +171,37 @@ export default function McTaskApp() {
   const openChest = useCallback((chestId: string) => {
     const block = drawBlock();
     setOpeningBlock(block);
+    setState((s) => ({
+      ...s,
+      chests: s.chests.filter(c => c.id !== chestId),
+      blocks: { ...s.blocks, [block.id]: (s.blocks[block.id] || 0) + 1 },
+    }));
+  }, []);
+
+  const craftItem = useCallback((itemId: string) => {
+    const recipe = RECIPE_MAP[itemId];
+    if (!recipe) return;
     setState((s) => {
-      const nb = { ...s.blocks, [block.id]: (s.blocks[block.id] || 0) + 1 };
-      const ns = { ...s.suits }; const nt = { ...s.tools }; const na = { ...s.armors };
-      let suitUnlocked: SuitDef | null = null;
-      SUITS.forEach((suit) => {
-        if (nb[suit.blockId] >= suit.blockRequired && !ns[suit.id]) {
-          ns[suit.id] = true;
-          const toolMap: Record<string, string[]> = {
-            wood: ['wood_sword','wood_shield','wood_axe','wood_pickaxe','wood_hoe','wood_shovel'],
-            stone: ['stone_sword','stone_axe','stone_pickaxe','stone_hoe','stone_shovel'],
-            iron: ['iron_sword','iron_axe','iron_pickaxe','iron_hoe','iron_shovel'],
-            diamond_tool: ['diamond_sword','diamond_axe','diamond_pickaxe','diamond_hoe','diamond_shovel'],
-            netherite_suit: ['iron_sword','iron_axe','iron_pickaxe','iron_hoe','iron_shovel'],
-            end_suit: ['diamond_sword','diamond_axe','diamond_pickaxe','diamond_hoe','diamond_shovel'],
-          };
-          const armorMap: Record<string, string[]> = {
-            leather: ['leather_helmet','leather_chest','leather_pants','leather_boots'],
-            iron_armor: ['iron_helmet','iron_chest','iron_pants','iron_boots'],
-            diamond_armor: ['diamond_helmet','diamond_chest','diamond_pants','diamond_boots'],
-            netherite_suit: ['iron_helmet','iron_chest','iron_pants','iron_boots'],
-            end_suit: ['diamond_helmet','diamond_chest','diamond_pants','diamond_boots'],
-          };
-          (toolMap[suit.id] || []).forEach(id => { nt[id] = true; });
-          (armorMap[suit.id] || []).forEach(id => { na[id] = true; });
-          suitUnlocked = suit;
-        }
-      });
-      if (suitUnlocked) setTimeout(() => setSuitUnlock(suitUnlocked), 200);
-      return { ...s, chests: s.chests.filter(c => c.id !== chestId), blocks: nb, suits: ns, tools: nt, armors: na };
+      if (s.items[itemId]) return s;
+      const have = getMaterialCount(s.blocks, recipe.material);
+      if (have < recipe.cost) return s;
+      const newBlocks = deductMaterial(s.blocks, recipe.material, recipe.cost);
+      return { ...s, blocks: newBlocks, items: { ...s.items, [itemId]: true } };
     });
+    const item = ITEMS.find(i => i.id === itemId);
+    if (item) setNotif(`获得 ${item.name}！`);
+  }, []);
+
+  const unlockSuit = useCallback((suitId: string) => {
+    const suit = SUITS.find(s => s.id === suitId);
+    if (!suit) return;
+    setState((s) => {
+      if (s.suits[suitId]) return s;
+      const allOwned = suit.requiredItems.every(id => s.items[id]);
+      if (!allOwned) return s;
+      return { ...s, suits: { ...s.suits, [suitId]: true } };
+    });
+    if (suit) setSuitUnlock(suit);
   }, []);
 
   const todayTasks = getTodayTasks(state.tasks);
@@ -453,7 +454,7 @@ export default function McTaskApp() {
         {/* 收藏页 */}
         {tab === 'collection' && (
           <div style={{ animation: 'fadeIn 0.2s ease' }}>
-            <CollectionPanel blocks={state.blocks} tools={state.tools} suits={state.suits} armors={state.armors} />
+            <CollectionPanel blocks={state.blocks} items={state.items} suits={state.suits} onCraft={craftItem} onUnlockSuit={unlockSuit} />
           </div>
         )}
       </div>
