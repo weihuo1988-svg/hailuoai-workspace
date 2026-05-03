@@ -6,6 +6,7 @@ const freqColor: Record<string, string> = { once: '#9E9E9E', daily: '#4CAF50', w
 interface HistoryEntry {
   taskName: string;
   frequency: string;
+  chests: number;
   completedAt: string;
 }
 
@@ -23,7 +24,7 @@ export function CompletionHistory({ tasks, onClose }: { tasks: Task[]; onClose: 
   for (const task of tasks) {
     if (!task.completionHistory || task.completionHistory.length === 0) continue;
     for (const ts of task.completionHistory) {
-      entries.push({ taskName: task.name, frequency: task.frequency, completedAt: ts });
+      entries.push({ taskName: task.name, frequency: task.frequency, chests: task.chests, completedAt: ts });
     }
   }
   entries.sort((a, b) => b.completedAt.localeCompare(a.completedAt));
@@ -101,6 +102,13 @@ export function CompletionHistory({ tasks, onClose }: { tasks: Task[]; onClose: 
                   <div style={{ flex: 1, fontSize: 13, color: '#E0E0E0' }}>
                     {entry.taskName}
                   </div>
+                  <span style={{
+                    background: '#FF9800', color: '#fff', fontSize: 7,
+                    fontFamily: "'Press Start 2P',monospace",
+                    padding: '2px 6px', borderRadius: 0, flexShrink: 0,
+                  }}>
+                    +{entry.chests}箱
+                  </span>
                   <span style={{
                     background: freqColor[entry.frequency] || '#555',
                     color: '#fff', fontSize: 7,
