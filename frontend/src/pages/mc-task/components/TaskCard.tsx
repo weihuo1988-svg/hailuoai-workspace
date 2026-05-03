@@ -15,7 +15,9 @@ export function TaskCard({ task, onComplete, onDelete, showPasswordOnComplete, c
   const [open, setOpen] = useState(false);
   const [pw, setPw]     = useState('');
   const [err, setErr]   = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
+  const history = task.completionHistory || [];
 
   useEffect(() => { if (open) ref.current?.focus(); }, [open]);
 
@@ -50,7 +52,28 @@ export function TaskCard({ task, onComplete, onDelete, showPasswordOnComplete, c
               {completed && (
                 <span style={{ background: '#2E7D32', color: '#8f8', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0 }}>已完成</span>
               )}
+              {history.length > 0 && (
+                <span
+                  onClick={() => setShowHistory(v => !v)}
+                  style={{ background: showHistory ? '#1565C0' : '#1E88E5', color: '#fff', fontSize: 7, fontFamily: "'Press Start 2P',monospace", padding: '3px 8px', borderRadius: 0, cursor: 'pointer' }}>
+                  {showHistory ? '收起' : `${history.length}次记录`}
+                </span>
+              )}
             </div>
+            {showHistory && history.length > 0 && (
+              <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(0,0,0,0.3)', border: '2px solid #1565C0', maxHeight: 160, overflowY: 'auto' }}>
+                <div style={{ fontFamily: "'Press Start 2P',monospace", fontSize: 7, color: '#64B5F6', marginBottom: 6 }}>完成记录</div>
+                {[...history].reverse().map((ts, i) => {
+                  const d = new Date(ts);
+                  const str = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                  return (
+                    <div key={i} style={{ fontSize: 11, color: '#90CAF9', padding: '2px 0', borderBottom: i < history.length - 1 ? '1px solid rgba(100,181,246,0.15)' : 'none' }}>
+                      {str}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
             {onDelete && !completed && (

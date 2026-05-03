@@ -7,6 +7,7 @@ import { TaskCard, AddTaskForm } from './components/TaskCard';
 import { CollectionPanel } from './components/CollectionPanel';
 import { ChestAnim, SuitAnim } from './components/ChestAnimations';
 import { SyncPanel } from './components/SyncPanel';
+import { CompletionHistory } from './components/CompletionHistory';
 import { STAT_ICON_MAP, TAB_ICON_MAP, MC_BLOCKS_BASE, MC_ITEMS_BASE, MC_LOCAL_BASE } from './mcTextures';
 import './App.css';
 
@@ -54,6 +55,7 @@ export default function McTaskApp() {
   const [suitUnlock, setSuitUnlock]   = useState<SuitDef | null>(null);
   const [notif, setNotif]               = useState('');
   const [showSync, setShowSync]   = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [syncVer, setSyncVer]     = useState(() => getSyncConfig()?.version ?? 0);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'err'>('idle');
 
@@ -146,15 +148,15 @@ export default function McTaskApp() {
     if (task.frequency === 'monthly' && (task.monthlyCount || 0) >= task.monthlyLimit) return;
     const newChests = Array.from({ length: task.chests }, () => ({ id: uid(), createdAt: new Date().toISOString() }));
     setState((s) => {
-      let tasks = s.tasks.map((t) => {
+      const tasks = s.tasks.map((t) => {
         if (t.id !== taskId) return t;
         const u: any = { lastCompletedAt: today };
         if (t.frequency === 'weekly') u.completedThisWeek = true;
         if (t.frequency === 'monthly') u.monthlyCount = (t.monthlyCount || 0) + 1;
         if (t.frequency === 'once') u.lastCompletedAt = 'done';
-        return { ...t, ...u };
+        const history = [...(t.completionHistory || []), new Date().toISOString()];
+        return { ...t, ...u, completionHistory: history };
       });
-      if (task.frequency === 'once') tasks = tasks.filter((t) => t.id !== taskId);
       return { ...s, tasks, chests: [...s.chests, ...newChests] };
     });
     setNotif(`🎉 获得 ${task.chests} 个宝箱！`);
@@ -343,7 +345,7 @@ export default function McTaskApp() {
         )}
 
         {/* 任务页 */}
-        {tab === 'tasks' && (
+        {tab === 'tasks' && !showHistory && (
           <div style={{ animation: 'fadeIn 0.2s ease' }}>
             {/* 标题栏 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -352,9 +354,19 @@ export default function McTaskApp() {
                 今日任务 <span style={{ color: '#888', fontSize: 8 }}>(待完成{todayTasks.length}/{allTasks.length})</span>
               </div>
               <button
-                onClick={() => setShowAddForm(v => !v)}
+                onClick={() => setShowHistory(true)}
                 style={{
                   marginLeft: 'auto',
+                  background: 'rgba(21,101,192,0.3)', border: '2px solid #1565C0', color: '#90CAF9',
+                  fontFamily: "'Press Start 2P',monospace",
+                  fontSize: 7, padding: '6px 10px', cursor: 'pointer', borderRadius: 0,
+                  boxShadow: '2px 2px 0 #0D47A1',
+                }}>
+                记录
+              </button>
+              <button
+                onClick={() => setShowAddForm(v => !v)}
+                style={{
                   background: showAddForm ? '#444' : 'linear-gradient(180deg,#4CAF50,#2E7D32)',
                   border: '3px solid #1B5E20', color: '#fff',
                   fontFamily: "'Press Start 2P',monospace",
@@ -398,6 +410,11 @@ export default function McTaskApp() {
               </div>
             )}
           </div>
+        )}
+
+        {/* 完成记录页 */}
+        {tab === 'tasks' && showHistory && (
+          <CompletionHistory tasks={state.tasks} onClose={() => setShowHistory(false)} />
         )}
 
         {/* 宝箱页 */}

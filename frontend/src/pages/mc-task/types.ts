@@ -5,6 +5,7 @@ export interface Task {
   monthlyLimit: number; monthlyCount: number; chests: number;
   password: string; lastCompletedAt: string | null;
   completedThisWeek: boolean; createdAt: string;
+  completionHistory?: string[];
 }
 export interface Chest { id: string; createdAt: string; }
 export interface AppState {
