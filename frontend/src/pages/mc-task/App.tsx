@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { BLOCKS, SUITS, ITEMS, RECIPE_MAP, drawBlock, deductMaterial, getMaterialCount } from './data';
 import type { BlockDef, SuitDef } from './data';
 import type { AppState, Tab } from './types';
@@ -53,19 +53,51 @@ export default function McTaskApp() {
   const [syncVer, setSyncVer]     = useState(() => getSyncConfig()?.version ?? 0);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'err'>('idle');
 
+  // 用 ref 避免闭包陈旧值问题
+  const syncVerRef = useRef(syncVer);
+  useEffect(() => { syncVerRef.current = syncVer; }, [syncVer]);
+  // 首次拉取完成前禁止自动推送，防止旧数据覆盖云端
+  const pullDoneRef = useRef(false);
+
+  // 数据迁移辅助函数（兼容旧格式 tools+armors → items）
+  const migrateData = useCallback((data: any): AppState => {
+    if (data.tools || data.armors) {
+      data.items = { ...data.tools, ...data.armors, ...(data.items || {}) };
+      delete data.tools;
+      delete data.armors;
+    }
+    if (!data.items) data.items = {};
+    return data as AppState;
+  }, []);
+
   // localStorage 持久化 + 防抖自动推送云端
   useEffect(() => {
     saveState(state);
+    // 首次 pull 完成前不推送，防止旧本地数据覆盖云端新数据
+    if (!pullDoneRef.current) return;
     const cfg = getSyncConfig();
     if (!cfg) return;
     const timer = setTimeout(async () => {
       try {
         setSyncStatus('syncing');
-        const newVer = await syncPush(cfg.userId, syncVer, state);
+        const newVer = await syncPush(cfg.userId, syncVerRef.current, state);
         setSyncVer(newVer);
         setSyncConfig({ ...cfg, version: newVer });
         setSyncStatus('ok');
-      } catch {
+      } catch (e: any) {
+        // 版本冲突时自动拉取最新数据
+        if (e.message?.includes('version_conflict') || e.message?.includes('409')) {
+          try {
+            const { data, version } = await syncPull(cfg.userId);
+            if (data && version > syncVerRef.current) {
+              setState(migrateData(data));
+              setSyncVer(version);
+              setSyncConfig({ ...cfg, version });
+              setSyncStatus('ok');
+              return;
+            }
+          } catch { /* pull also failed, fall through */ }
+        }
         setSyncStatus('err');
       }
     }, 2000);
@@ -77,19 +109,12 @@ export default function McTaskApp() {
   useEffect(() => {
     const onFocus = async () => {
       const cfg = getSyncConfig();
-      if (!cfg) return;
+      if (!cfg) { pullDoneRef.current = true; return; }
       try {
         setSyncStatus('syncing');
         const { data, version } = await syncPull(cfg.userId);
-        if (data && version > syncVer) {
-          // 兼容旧格式：tools+armors → items
-          if ((data as any).tools || (data as any).armors) {
-            data.items = { ...(data as any).tools, ...(data as any).armors, ...(data.items || {}) };
-            delete (data as any).tools;
-            delete (data as any).armors;
-          }
-          if (!data.items) data.items = {};
-          setState(data);
+        if (data && version > syncVerRef.current) {
+          setState(migrateData(data));
           setSyncVer(version);
           setSyncConfig({ ...cfg, version });
         }
@@ -97,6 +122,7 @@ export default function McTaskApp() {
       } catch {
         setSyncStatus('err');
       }
+      pullDoneRef.current = true;
     };
     window.addEventListener('focus', onFocus);
     onFocus();

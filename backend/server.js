@@ -71,7 +71,7 @@ app.post('/api/sync', (req, res) => {
   if (existsSync(fp)) {
     try {
       const cur = JSON.parse(readFileSync(fp, 'utf-8'));
-      if ((cur.version ?? 0) > version)
+      if ((cur.version ?? 0) !== version)
         return res.status(409).json({ error: 'version_conflict', currentVersion: cur.version });
     } catch (err) {
       console.error('[conflict check error]', err.message);
