@@ -82,6 +82,13 @@ export default function McTaskApp() {
         setSyncStatus('syncing');
         const { data, version } = await syncPull(cfg.userId);
         if (data && version > syncVer) {
+          // 兼容旧格式：tools+armors → items
+          if ((data as any).tools || (data as any).armors) {
+            data.items = { ...(data as any).tools, ...(data as any).armors, ...(data.items || {}) };
+            delete (data as any).tools;
+            delete (data as any).armors;
+          }
+          if (!data.items) data.items = {};
           setState(data);
           setSyncVer(version);
           setSyncConfig({ ...cfg, version });
