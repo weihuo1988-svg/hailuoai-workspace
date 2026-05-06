@@ -326,4 +326,4 @@ export const SUITS: SuitDef[] = [
 ];
 
 export const STORAGE_KEY = 'mc-task-tool-v1';
-export const DEFAULT_PIN = '123456';
+export const DEFAULT_PIN = '505050';

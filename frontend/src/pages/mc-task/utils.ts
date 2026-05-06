@@ -7,9 +7,9 @@ export function getWeek(): string { const d = new Date(); return `${d.getFullYea
 export function getMonth(): string { return new Date().toISOString().slice(0, 7); }
 
 const EXAMPLE_TASKS: AppState['tasks'] = [
-  { id: 'example_1', name: '整理书包', description: '把明天要用的书本放回书包', frequency: 'daily', monthlyLimit: 0, monthlyCount: 0, chests: 1, password: '123456', lastCompletedAt: null, completedThisWeek: false, createdAt: new Date().toISOString() },
-  { id: 'example_2', name: '按时睡觉', description: '晚上9点前上床睡觉', frequency: 'daily', monthlyLimit: 0, monthlyCount: 0, chests: 1, password: '123456', lastCompletedAt: null, completedThisWeek: false, createdAt: new Date().toISOString() },
-  { id: 'example_3', name: '帮忙洗碗', description: '吃完饭后帮爸爸妈妈收拾碗筷', frequency: 'daily', monthlyLimit: 0, monthlyCount: 0, chests: 2, password: '123456', lastCompletedAt: null, completedThisWeek: false, createdAt: new Date().toISOString() },
+  { id: 'example_1', name: '整理书包', description: '把明天要用的书本放回书包', frequency: 'daily', monthlyLimit: 0, monthlyCount: 0, chests: 1, password: '505050', lastCompletedAt: null, completedThisWeek: false, createdAt: new Date().toISOString() },
+  { id: 'example_2', name: '按时睡觉', description: '晚上9点前上床睡觉', frequency: 'daily', monthlyLimit: 0, monthlyCount: 0, chests: 1, password: '505050', lastCompletedAt: null, completedThisWeek: false, createdAt: new Date().toISOString() },
+  { id: 'example_3', name: '帮忙洗碗', description: '吃完饭后帮爸爸妈妈收拾碗筷', frequency: 'daily', monthlyLimit: 0, monthlyCount: 0, chests: 2, password: '505050', lastCompletedAt: null, completedThisWeek: false, createdAt: new Date().toISOString() },
 ];
 
 export function loadState(): AppState {
